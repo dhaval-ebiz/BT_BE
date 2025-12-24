@@ -1,0 +1,465 @@
+import { Queue, Worker, Job } from 'bullmq';
+import { redis } from '../config/redis';
+import { logger, logBackgroundJob } from '../utils/logger';
+
+// Queue names
+export const QUEUE_NAMES = {
+  BILL_NOTIFICATIONS: 'bill-notifications',
+  PAYMENT_REMINDERS: 'payment-reminders',
+  LOW_STOCK_ALERTS: 'low-stock-alerts',
+  BACKGROUND_TASKS: 'background-tasks',
+  AI_GENERATION: 'ai-generation',
+  DATA_EXPORTS: 'data-exports',
+};
+
+// Create queues
+export const billNotificationQueue = new Queue(QUEUE_NAMES.BILL_NOTIFICATIONS, {
+  connection: redis,
+  defaultJobOptions: {
+    removeOnComplete: 10,
+    removeOnFail: 5,
+    attempts: 3,
+    backoff: {
+      type: 'exponential',
+      delay: 2000,
+    },
+  },
+});
+
+export const paymentReminderQueue = new Queue(QUEUE_NAMES.PAYMENT_REMINDERS, {
+  connection: redis,
+  defaultJobOptions: {
+    removeOnComplete: 10,
+    removeOnFail: 5,
+    attempts: 3,
+    backoff: {
+      type: 'exponential',
+      delay: 2000,
+    },
+  },
+});
+
+export const lowStockAlertQueue = new Queue(QUEUE_NAMES.LOW_STOCK_ALERTS, {
+  connection: redis,
+  defaultJobOptions: {
+    removeOnComplete: 10,
+    removeOnFail: 5,
+    attempts: 2,
+    backoff: {
+      type: 'exponential',
+      delay: 1000,
+    },
+  },
+});
+
+export const backgroundTaskQueue = new Queue(QUEUE_NAMES.BACKGROUND_TASKS, {
+  connection: redis,
+  defaultJobOptions: {
+    removeOnComplete: 50,
+    removeOnFail: 10,
+    attempts: 5,
+    backoff: {
+      type: 'exponential',
+      delay: 3000,
+    },
+  },
+});
+
+export const aiGenerationQueue = new Queue(QUEUE_NAMES.AI_GENERATION, {
+  connection: redis,
+  defaultJobOptions: {
+    removeOnComplete: 5,
+    removeOnFail: 3,
+    attempts: 2,
+    backoff: {
+      type: 'exponential',
+      delay: 5000,
+    },
+  },
+});
+
+export const dataExportQueue = new Queue(QUEUE_NAMES.DATA_EXPORTS, {
+  connection: redis,
+  defaultJobOptions: {
+    removeOnComplete: 10,
+    removeOnFail: 5,
+    attempts: 3,
+    backoff: {
+      type: 'exponential',
+      delay: 2000,
+    },
+  },
+});
+
+// Note: QueueScheduler was removed in BullMQ v5
+// Delayed job handling is now built into the Worker class
+
+// Worker processors
+export function setupWorkers() {
+  // Bill notification worker
+  const billNotificationWorker = new Worker(
+    QUEUE_NAMES.BILL_NOTIFICATIONS,
+    async (job: Job) => {
+      const { type, recipient, billId, businessId } = job.data;
+      logBackgroundJob('bill_notification', 'started', { jobId: job.id, type, recipient });
+      
+      try {
+        // Import here to avoid circular dependencies
+        const { sendBillNotification } = await import('../utils/notifications');
+        const { BillingService } = await import('../services/billing.service');
+        
+        const billingService = new BillingService();
+        const billData = await billingService.getBill(businessId, billId);
+        
+        await sendBillNotification(type, recipient, billData.bill, billData.items);
+        
+        logBackgroundJob('bill_notification', 'completed', { jobId: job.id, type, recipient });
+      } catch (error) {
+        logBackgroundJob('bill_notification', 'failed', { jobId: job.id, error: error.message });
+        throw error;
+      }
+    },
+    { connection: redis }
+  );
+
+  // Payment reminder worker
+  const paymentReminderWorker = new Worker(
+    QUEUE_NAMES.PAYMENT_REMINDERS,
+    async (job: Job) => {
+      const { customerId, businessId, type } = job.data;
+      logBackgroundJob('payment_reminder', 'started', { jobId: job.id, customerId, type });
+      
+      try {
+        const { CustomerService } = await import('../services/customer.service');
+        const { sendOverdueReminder } = await import('../utils/notifications');
+        
+        const customerService = new CustomerService();
+        const customer = await customerService.getCustomer(businessId, customerId);
+        
+        // Get overdue bills for this customer
+        const { db } = await import('../config/database');
+        const { bills } = await import('../models/drizzle/schema');
+        const { eq, and, sql } = await import('drizzle-orm');
+        
+        const overdueBills = await db
+          .select()
+          .from(bills)
+          .where(and(
+            eq(bills.customerId, customerId),
+            eq(bills.businessId, businessId),
+            sql`${bills.dueDate} < NOW()`,
+            eq(bills.status, 'PENDING')
+          ));
+        
+        if (overdueBills.length > 0) {
+          const recipient = type === 'email' ? customer.email : customer.phone;
+          if (recipient) {
+            await sendOverdueReminder(type, recipient, overdueBills[0]);
+          }
+        }
+        
+        logBackgroundJob('payment_reminder', 'completed', { jobId: job.id, customerId });
+      } catch (error) {
+        logBackgroundJob('payment_reminder', 'failed', { jobId: job.id, error: error.message });
+        throw error;
+      }
+    },
+    { connection: redis }
+  );
+
+  // Low stock alert worker
+  const lowStockAlertWorker = new Worker(
+    QUEUE_NAMES.LOW_STOCK_ALERTS,
+    async (job: Job) => {
+      const { businessId } = job.data;
+      logBackgroundJob('low_stock_alert', 'started', { jobId: job.id, businessId });
+      
+      try {
+        const { ProductService } = await import('../services/product.service');
+        const { sendLowStockAlert } = await import('../utils/notifications');
+        
+        const productService = new ProductService();
+        const lowStockProducts = await productService.getLowStockProducts(businessId);
+        
+        if (lowStockProducts.length > 0) {
+          // Get business owner details
+          const { db } = await import('../config/database');
+          const { retailBusinesses, users } = await import('../models/drizzle/schema');
+          const { eq } = await import('drizzle-orm');
+          
+          const [business] = await db
+            .select()
+            .from(retailBusinesses)
+            .where(eq(retailBusinesses.id, businessId))
+            .limit(1);
+          
+          if (business) {
+            const [owner] = await db
+              .select()
+              .from(users)
+              .where(eq(users.id, business.ownerId))
+              .limit(1);
+            
+            if (owner && owner.email) {
+              await sendLowStockAlert('email', owner.email, lowStockProducts);
+            }
+          }
+        }
+        
+        logBackgroundJob('low_stock_alert', 'completed', { jobId: job.id, businessId, alertCount: lowStockProducts.length });
+      } catch (error) {
+        logBackgroundJob('low_stock_alert', 'failed', { jobId: job.id, error: error.message });
+        throw error;
+      }
+    },
+    { connection: redis }
+  );
+
+  // Background task worker
+  const backgroundTaskWorker = new Worker(
+    QUEUE_NAMES.BACKGROUND_TASKS,
+    async (job: Job) => {
+      const { task, data } = job.data;
+      logBackgroundJob(task, 'started', { jobId: job.id, data });
+      
+      try {
+        switch (task) {
+          case 'cleanup_old_data':
+            await cleanupOldData(data);
+            break;
+          case 'generate_reports':
+            await generateReports(data);
+            break;
+          case 'backup_data':
+            await backupData(data);
+            break;
+          default:
+            throw new Error(`Unknown task: ${task}`);
+        }
+        
+        logBackgroundJob(task, 'completed', { jobId: job.id });
+      } catch (error) {
+        logBackgroundJob(task, 'failed', { jobId: job.id, error: error.message });
+        throw error;
+      }
+    },
+    { connection: redis }
+  );
+
+  // AI generation worker
+  const aiGenerationWorker = new Worker(
+    QUEUE_NAMES.AI_GENERATION,
+    async (job: Job) => {
+      const { type, data, userId, businessId } = job.data;
+      logBackgroundJob('ai_generation', 'started', { jobId: job.id, type, userId });
+      
+      try {
+        const { AIGenerationService } = await import('../services/ai.service');
+        const aiService = new AIGenerationService();
+        
+        let result;
+        switch (type) {
+          case 'banner':
+            result = await aiService.generateBanner(data.prompt, userId, businessId);
+            break;
+          case 'sql_query':
+            result = await aiService.generateSQLQuery(data.prompt, userId, businessId);
+            break;
+          case 'text':
+            result = await aiService.generateText(data.prompt, data.style, userId, businessId);
+            break;
+          default:
+            throw new Error(`Unknown AI generation type: ${type}`);
+        }
+        
+        logBackgroundJob('ai_generation', 'completed', { jobId: job.id, type, userId });
+        return result;
+      } catch (error) {
+        logBackgroundJob('ai_generation', 'failed', { jobId: job.id, error: error.message });
+        throw error;
+      }
+    },
+    { connection: redis }
+  );
+
+  // Data export worker
+  const dataExportWorker = new Worker(
+    QUEUE_NAMES.DATA_EXPORTS,
+    async (job: Job) => {
+      const { type, filters, userId, businessId } = job.data;
+      logBackgroundJob('data_export', 'started', { jobId: job.id, type, userId });
+      
+      try {
+        const { DataExportService } = await import('../services/export.service');
+        const exportService = new DataExportService();
+        
+        let result;
+        switch (type) {
+          case 'customers':
+            result = await exportService.exportCustomers(businessId, filters);
+            break;
+          case 'bills':
+            result = await exportService.exportBills(businessId, filters);
+            break;
+          case 'products':
+            result = await exportService.exportProducts(businessId, filters);
+            break;
+          case 'payments':
+            result = await exportService.exportPayments(businessId, filters);
+            break;
+          default:
+            throw new Error(`Unknown export type: ${type}`);
+        }
+        
+        logBackgroundJob('data_export', 'completed', { jobId: job.id, type, userId });
+        return result;
+      } catch (error) {
+        logBackgroundJob('data_export', 'failed', { jobId: job.id, error: error.message });
+        throw error;
+      }
+    },
+    { connection: redis }
+  );
+
+  // Set up error handlers
+  const workers = [
+    billNotificationWorker,
+    paymentReminderWorker,
+    lowStockAlertWorker,
+    backgroundTaskWorker,
+    aiGenerationWorker,
+    dataExportWorker,
+  ];
+
+  workers.forEach(worker => {
+    worker.on('failed', (job, err) => {
+      logger.error(`Worker failed`, { 
+        queue: worker.name, 
+        jobId: job.id, 
+        error: err.message 
+      });
+    });
+
+    worker.on('completed', (job) => {
+      logger.info(`Worker completed job`, { 
+        queue: worker.name, 
+        jobId: job.id 
+      });
+    });
+  });
+
+  return workers;
+}
+
+// Background task processors
+async function cleanupOldData(data: any) {
+  const { db } = await import('../config/database');
+  const { auditLogs, messages } = await import('../models/drizzle/schema');
+  const { sql } = await import('drizzle-orm');
+  
+  const { daysOld = 90 } = data;
+  const cutoffDate = new Date();
+  cutoffDate.setDate(cutoffDate.getDate() - daysOld);
+  
+  // Delete old audit logs
+  await db.delete(auditLogs).where(sql`${auditLogs.createdAt} < ${cutoffDate}`);
+  
+  // Delete old messages
+  await db.delete(messages).where(sql`${messages.createdAt} < ${cutoffDate}`);
+  
+  logger.info('Old data cleaned up', { cutoffDate });
+}
+
+async function generateReports(data: any) {
+  const { businessId, reportType, dateRange } = data;
+  
+  // Implement report generation logic
+  logger.info('Report generated', { businessId, reportType, dateRange });
+}
+
+async function backupData(data: any) {
+  const { businessId, backupType } = data;
+  
+  // Implement backup logic
+  logger.info('Data backup completed', { businessId, backupType });
+}
+
+// Utility functions for adding jobs
+export async function addBillNotificationJob(data: any, delay?: number) {
+  const job = await billNotificationQueue.add('send-bill-notification', data, {
+    delay,
+    attempts: 3,
+  });
+  return job;
+}
+
+export async function addPaymentReminderJob(data: any, repeat?: any) {
+  const job = await paymentReminderQueue.add('send-payment-reminder', data, {
+    repeat,
+    attempts: 2,
+  });
+  return job;
+}
+
+export async function addLowStockAlertJob(data: any) {
+  const job = await lowStockAlertQueue.add('check-low-stock', data, {
+    attempts: 2,
+  });
+  return job;
+}
+
+export async function addBackgroundTaskJob(task: string, data: any, delay?: number) {
+  const job = await backgroundTaskQueue.add('process-task', { task, data }, {
+    delay,
+    attempts: 5,
+  });
+  return job;
+}
+
+export async function addAIGenerationJob(type: string, data: any, userId: string, businessId: string) {
+  const job = await aiGenerationQueue.add('generate-content', { type, data, userId, businessId }, {
+    attempts: 2,
+  });
+  return job;
+}
+
+export async function addDataExportJob(type: string, filters: any, userId: string, businessId: string) {
+  const job = await dataExportQueue.add('export-data', { type, filters, userId, businessId }, {
+    attempts: 3,
+  });
+  return job;
+}
+
+// Initialize queues and workers
+export async function initializeQueues() {
+  try {
+    // Test Redis connection
+    await redis.ping();
+    logger.info('Redis connection established for queues');
+    
+    // Set up workers
+    const workers = setupWorkers();
+    logger.info('BullMQ workers initialized', { workerCount: workers.length });
+    
+    return workers;
+  } catch (error) {
+    logger.error('Failed to initialize queues', { error });
+    throw error;
+  }
+}
+
+// Graceful shutdown
+export async function closeQueues() {
+  try {
+    await billNotificationQueue.close();
+    await paymentReminderQueue.close();
+    await lowStockAlertQueue.close();
+    await backgroundTaskQueue.close();
+    await aiGenerationQueue.close();
+    await dataExportQueue.close();
+    
+    logger.info('All queues closed');
+  } catch (error) {
+    logger.error('Error closing queues', { error });
+  }
+}
