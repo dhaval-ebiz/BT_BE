@@ -1,4 +1,5 @@
 import { Response } from 'express';
+import { getErrorMessage } from '../utils/errors';
 import { BusinessRequest } from '../middleware/auth.middleware';
 import { AnalyticsService } from '../services/analytics.service';
 import { logger, logApiRequest } from '../utils/logger';
@@ -16,7 +17,7 @@ export class DashboardController {
         
         logApiRequest(req, res, Date.now() - startTime);
         res.json({ success: true, data: stats });
-    } catch (error: any) {
+    } catch (error: unknown) {
         logger.error('Dashboard stats error:', error);
         res.status(500).json({ success: false, message: error.message });
     }
@@ -30,7 +31,7 @@ export class DashboardController {
         const data = await analyticsService.getSalesGraph(req.business.id, range as 'WEEK' | 'MONTH' || 'WEEK');
         
         res.json({ success: true, data });
-    } catch (error: any) {
+    } catch (error: unknown) {
         res.status(500).json({ success: false, message: error.message });
     }
   }
@@ -43,7 +44,7 @@ export class DashboardController {
         const data = await analyticsService.getTopSellingProducts(req.business.id, limit ? Number(limit) : 5);
         
         res.json({ success: true, data });
-    } catch (error: any) {
+    } catch (error: unknown) {
         res.status(500).json({ success: false, message: error.message });
     }
   }
@@ -56,7 +57,7 @@ export class DashboardController {
         const data = await analyticsService.getLowStockItems(req.business.id, limit ? Number(limit) : 10);
         
         res.json({ success: true, data });
-    } catch (error: any) {
+    } catch (error: unknown) {
         res.status(500).json({ success: false, message: error.message });
     }
   }

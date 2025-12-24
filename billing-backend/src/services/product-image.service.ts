@@ -127,17 +127,15 @@ export class ProductImageService {
         throw new Error('Product not found or access denied');
       }
 
-      let query = db
+      const conditions = imageType
+        ? and(eq(productImages.productId, productId), eq(productImages.imageType, imageType))
+        : eq(productImages.productId, productId);
+
+      const images = await db
         .select()
         .from(productImages)
-        .where(eq(productImages.productId, productId))
+        .where(conditions)
         .orderBy(desc(productImages.isPrimary), desc(productImages.createdAt));
-
-      if (imageType) {
-        query = query.where(eq(productImages.imageType, imageType)) as any;
-      }
-
-      const images = await query;
 
       return images;
     } catch (error) {

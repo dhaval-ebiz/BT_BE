@@ -10,6 +10,7 @@ import {
 } from '../schemas/product.schema';
 import { logger, logApiRequest } from '../utils/logger';
 import { BusinessRequest } from '../middleware/auth.middleware';
+import { getErrorMessage } from '../utils/errors';
 import multer from 'multer';
 
 const productService = new ProductService();
@@ -54,13 +55,13 @@ export class ProductController {
         success: true,
         data: product,
       });
-    } catch (error: any) {
+    } catch (error: unknown) {
       logger.error('Create product error:', error);
       logApiRequest(req, res, Date.now() - startTime);
       
       res.status(400).json({
         success: false,
-        message: error.message || 'Product creation failed',
+        message: getErrorMessage(error, 'Product creation failed'),
       });
     }
   }
@@ -85,13 +86,13 @@ export class ProductController {
         success: true,
         data: product,
       });
-    } catch (error: any) {
+    } catch (error: unknown) {
       logger.error('Get product error:', error);
       logApiRequest(req, res, Date.now() - startTime);
       
       res.status(404).json({
         success: false,
-        message: error.message || 'Product not found',
+        message: getErrorMessage(error, 'Product not found'),
       });
     }
   }
@@ -124,13 +125,13 @@ export class ProductController {
         success: true,
         data: product,
       });
-    } catch (error: any) {
+    } catch (error: unknown) {
       logger.error('Update product error:', error);
       logApiRequest(req, res, Date.now() - startTime);
       
       res.status(400).json({
         success: false,
-        message: error.message || 'Product update failed',
+        message: getErrorMessage(error, 'Product update failed'),
       });
     }
   }
@@ -155,13 +156,13 @@ export class ProductController {
         success: true,
         data: result,
       });
-    } catch (error: any) {
+    } catch (error: unknown) {
       logger.error('Delete product error:', error);
       logApiRequest(req, res, Date.now() - startTime);
       
       res.status(400).json({
         success: false,
-        message: error.message || 'Product deletion failed',
+        message: getErrorMessage(error, 'Product deletion failed'),
       });
     }
   }
@@ -182,9 +183,11 @@ export class ProductController {
         categoryId: req.query.categoryId as string,
         isActive: req.query.isActive !== undefined ? req.query.isActive === 'true' : undefined,
         lowStock: req.query.lowStock !== undefined ? req.query.lowStock === 'true' : undefined,
-        unit: req.query.unit as any,
-        sortBy: req.query.sortBy as any,
-        sortOrder: req.query.sortOrder as any,
+        unit: typeof req.query.unit === 'string' ? req.query.unit : undefined,
+        sortBy: typeof req.query.sortBy === 'string' ? req.query.sortBy : undefined,
+        sortOrder: typeof req.query.sortOrder === 'string' && ['asc', 'desc'].includes(req.query.sortOrder.toLowerCase()) 
+          ? (req.query.sortOrder.toLowerCase() as 'asc' | 'desc') 
+          : undefined,
         page: parseInt(req.query.page as string) || 1,
         limit: parseInt(req.query.limit as string) || 20,
       };
@@ -197,13 +200,13 @@ export class ProductController {
         success: true,
         data: result,
       });
-    } catch (error: any) {
+    } catch (error: unknown) {
       logger.error('Get products error:', error);
       logApiRequest(req, res, Date.now() - startTime);
       
       res.status(500).json({
         success: false,
-        message: error.message || 'Failed to fetch products',
+        message: getErrorMessage(error, 'Failed to fetch products'),
       });
     }
   }
@@ -235,13 +238,13 @@ export class ProductController {
         success: true,
         data: result,
       });
-    } catch (error: any) {
+    } catch (error: unknown) {
       logger.error('Adjust stock error:', error);
       logApiRequest(req, res, Date.now() - startTime);
       
       res.status(400).json({
         success: false,
-        message: error.message || 'Stock adjustment failed',
+        message: getErrorMessage(error, 'Stock adjustment failed'),
       });
     }
   }
@@ -265,13 +268,13 @@ export class ProductController {
         success: true,
         data: products,
       });
-    } catch (error: any) {
+    } catch (error: unknown) {
       logger.error('Get low stock products error:', error);
       logApiRequest(req, res, Date.now() - startTime);
       
       res.status(500).json({
         success: false,
-        message: error.message || 'Failed to fetch low stock products',
+        message: getErrorMessage(error, 'Failed to fetch low stock products'),
       });
     }
   }
@@ -295,13 +298,13 @@ export class ProductController {
         success: true,
         data: stats,
       });
-    } catch (error: any) {
+    } catch (error: unknown) {
       logger.error('Get product stats error:', error);
       logApiRequest(req, res, Date.now() - startTime);
       
       res.status(500).json({
         success: false,
-        message: error.message || 'Failed to fetch product stats',
+        message: getErrorMessage(error, 'Failed to fetch product stats'),
       });
     }
   }
@@ -346,20 +349,21 @@ export class ProductController {
         success: true,
         data: result,
       });
-    } catch (error: any) {
+    } catch (error: unknown) {
       logger.error('Upload product image error:', error);
       logApiRequest(req, res, Date.now() - startTime);
       
-      if (error.message.includes('limit exceeded')) {
+      const errorMsg = getErrorMessage(error, 'Image upload failed');
+      if (errorMsg.includes('limit exceeded')) {
         return res.status(429).json({
           success: false,
-          message: error.message,
+          message: errorMsg,
         });
       }
       
       res.status(400).json({
         success: false,
-        message: error.message || 'Image upload failed',
+        message: errorMsg,
       });
     }
   }
@@ -401,20 +405,21 @@ export class ProductController {
         success: true,
         data: result,
       });
-    } catch (error: any) {
+    } catch (error: unknown) {
       logger.error('Upload multiple product images error:', error);
       logApiRequest(req, res, Date.now() - startTime);
       
-      if (error.message.includes('limit exceeded')) {
+      const errorMsg = getErrorMessage(error, 'Image upload failed');
+      if (errorMsg.includes('limit exceeded')) {
         return res.status(429).json({
           success: false,
-          message: error.message,
+          message: errorMsg,
         });
       }
       
       res.status(400).json({
         success: false,
-        message: error.message || 'Image upload failed',
+        message: errorMsg,
       });
     }
   }
@@ -445,13 +450,13 @@ export class ProductController {
         success: true,
         data: images,
       });
-    } catch (error: any) {
+    } catch (error: unknown) {
       logger.error('Get product images error:', error);
       logApiRequest(req, res, Date.now() - startTime);
       
       res.status(500).json({
         success: false,
-        message: error.message || 'Failed to fetch product images',
+        message: getErrorMessage(error, 'Failed to fetch product images'),
       });
     }
   }
@@ -481,13 +486,13 @@ export class ProductController {
         success: true,
         data: result,
       });
-    } catch (error: any) {
+    } catch (error: unknown) {
       logger.error('Delete product image error:', error);
       logApiRequest(req, res, Date.now() - startTime);
       
       res.status(500).json({
         success: false,
-        message: error.message || 'Failed to delete product image',
+        message: getErrorMessage(error, 'Failed to delete product image'),
       });
     }
   }
@@ -517,13 +522,13 @@ export class ProductController {
         success: true,
         data: image,
       });
-    } catch (error: any) {
+    } catch (error: unknown) {
       logger.error('Set primary image error:', error);
       logApiRequest(req, res, Date.now() - startTime);
       
       res.status(500).json({
         success: false,
-        message: error.message || 'Failed to set primary image',
+        message: getErrorMessage(error, 'Failed to set primary image'),
       });
     }
   }

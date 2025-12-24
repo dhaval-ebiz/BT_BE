@@ -9,6 +9,11 @@ interface PerformanceMetrics {
   slowRequests: number;
 }
 
+// Extended request type for database metrics
+interface RequestWithQueryCount extends Request {
+  queryCount?: number;
+}
+
 export function performanceMonitor(req: Request, res: Response, next: NextFunction) {
   const startTime = Date.now();
   const startMemory = process.memoryUsage();
@@ -84,9 +89,10 @@ export function apiMetrics(req: Request, res: Response, next: NextFunction) {
   next();
 }
 
-export function databaseMetrics(req: Request, res: Response, next: NextFunction) {
+export function databaseMetrics(req: Request, res: Response, next: NextFunction): void {
   const startTime = Date.now();
-  const queryCount = (req as any).queryCount || 0;
+  const extendedReq = req as RequestWithQueryCount;
+  const queryCount = extendedReq.queryCount || 0;
 
   res.on('finish', () => {
     const duration = Date.now() - startTime;
@@ -113,8 +119,8 @@ export function cacheMetrics(req: Request, res: Response, next: NextFunction) {
 
   // Override redis get to track cache metrics
   const originalGet = redis.get.bind(redis);
-  redis.get = async (...args: any[]) => {
-    const result = await originalGet(...args);
+  redis.get = async (key: string): Promise<string | null> => {
+    const result = await originalGet(key);
     if (result !== null) {
       cacheHits++;
     } else {
@@ -148,14 +154,14 @@ export function compressionMetrics(req: Request, res: Response, next: NextFuncti
   const originalEnd = res.end;
   let responseSize = 0;
 
-  res.write = (chunk: any) => {
+  res.write = (chunk: Buffer | string): boolean => {
     if (chunk) {
       responseSize += Buffer.isBuffer(chunk) ? chunk.length : Buffer.byteLength(chunk);
     }
-    return originalWrite.call(res, chunk);
+    return originalWrite.call(res, chunk) as boolean;
   };
 
-  res.end = (chunk?: any) => {
+  res.end = (chunk?: Buffer | string): Response => {
     if (chunk) {
       responseSize += Buffer.isBuffer(chunk) ? chunk.length : Buffer.byteLength(chunk);
     }
@@ -175,7 +181,7 @@ export function compressionMetrics(req: Request, res: Response, next: NextFuncti
       });
     }
 
-    return originalEnd.call(res, chunk);
+    return originalEnd.call(res, chunk) as Response;
   };
 
   next();

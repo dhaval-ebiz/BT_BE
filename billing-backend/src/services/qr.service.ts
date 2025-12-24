@@ -6,11 +6,12 @@ import { logger } from '../utils/logger';
 import { AuditService } from './audit.service';
 import * as QRCode from 'qrcode';
 import { v4 as uuidv4 } from 'uuid';
+import { Request } from 'express';
 
 const auditService = new AuditService();
 
 export class QrService {
-  async generateBatch(businessId: string, userId: string, input: GenerateQrBatchInput, req?: any) {
+  async generateBatch(businessId: string, userId: string, input: GenerateQrBatchInput, req?: Request) {
     const { productId, batchName, quantity, purpose, notes, expiryDate } = input;
 
     // Verify product if provided
@@ -73,16 +74,14 @@ export class QrService {
   }
 
   async getBatches(businessId: string, productId?: string) {
-    let query = db
+    const conditions = productId
+      ? and(eq(qrCodeBatches.businessId, businessId), eq(qrCodeBatches.productId, productId))
+      : eq(qrCodeBatches.businessId, businessId);
+
+    return await db
       .select()
       .from(qrCodeBatches)
-      .where(eq(qrCodeBatches.businessId, businessId))
+      .where(conditions)
       .orderBy(desc(qrCodeBatches.createdAt));
-
-    if (productId) {
-      query = query.where(eq(qrCodeBatches.productId, productId)) as any;
-    }
-
-    return await query;
   }
 }

@@ -61,7 +61,7 @@ export class PermissionController {
         });
       }
 
-      const hasPermission = await permissionService.hasPermission(userId, businessId, permission as any);
+      const hasPermission = await permissionService.hasPermission(userId, businessId, permission);
 
       res.json({
         success: true,
@@ -208,7 +208,7 @@ export class PermissionController {
         success: true,
         data: {
           validPermissions,
-          invalidPermissions: permissions.filter(p => !validPermissions.includes(p as any)),
+          invalidPermissions: permissions.filter(p => !validPermissions.includes(p as string)),
         },
         timestamp: new Date().toISOString(),
       });

@@ -1,4 +1,5 @@
 import { Request, Response } from 'express';
+import { getErrorMessage } from '../utils/errors';
 import { MerchantService } from '../services/merchant.service';
 import { 
   CreateMerchantInput, 
@@ -32,7 +33,7 @@ export class MerchantController {
         success: true,
         data: merchant,
       });
-    } catch (error: any) {
+    } catch (error: unknown) {
       logger.error('Create merchant error:', error);
       logApiRequest(req, res, Date.now() - startTime);
       
@@ -65,7 +66,7 @@ export class MerchantController {
         success: true,
         data: merchant,
       });
-    } catch (error: any) {
+    } catch (error: unknown) {
       logger.error('Get merchant error:', error);
       logApiRequest(req, res, Date.now() - startTime);
       
@@ -99,7 +100,7 @@ export class MerchantController {
         success: true,
         data: merchant,
       });
-    } catch (error: any) {
+    } catch (error: unknown) {
       logger.error('Update merchant error:', error);
       logApiRequest(req, res, Date.now() - startTime);
       
@@ -132,7 +133,7 @@ export class MerchantController {
         success: true,
         data: result,
       });
-    } catch (error: any) {
+    } catch (error: unknown) {
       logger.error('Delete merchant error:', error);
       logApiRequest(req, res, Date.now() - startTime);
       
@@ -165,7 +166,7 @@ export class MerchantController {
         success: true,
         data: result,
       });
-    } catch (error: any) {
+    } catch (error: unknown) {
       logger.error('Get merchants error:', error);
       logApiRequest(req, res, Date.now() - startTime);
       
@@ -200,7 +201,7 @@ export class MerchantController {
         success: true,
         data: payment,
       });
-    } catch (error: any) {
+    } catch (error: unknown) {
       logger.error('Add merchant payment error:', error);
       logApiRequest(req, res, Date.now() - startTime);
       
@@ -235,7 +236,7 @@ export class MerchantController {
         success: true,
         data: result,
       });
-    } catch (error: any) {
+    } catch (error: unknown) {
       logger.error('Get merchant payments error:', error);
       logApiRequest(req, res, Date.now() - startTime);
       
@@ -267,7 +268,7 @@ export class MerchantController {
         success: true,
         data: stats,
       });
-    } catch (error: any) {
+    } catch (error: unknown) {
       logger.error('Get merchant stats error:', error);
       logApiRequest(req, res, Date.now() - startTime);
       

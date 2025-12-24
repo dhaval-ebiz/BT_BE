@@ -1,4 +1,5 @@
 import { Response } from 'express';
+import { getErrorMessage } from '../utils/errors';
 import { AIGenerationService } from '../services/ai.service';
 import { BusinessRequest } from '../middleware/auth.middleware';
 import { logger, logApiRequest } from '../utils/logger';
@@ -44,7 +45,7 @@ export class AIController {
           message: 'Banner generation started',
         },
       });
-    } catch (error: any) {
+    } catch (error: unknown) {
       logger.error('Generate banner error:', error);
       logApiRequest(req, res, Date.now() - startTime);
       
@@ -89,7 +90,7 @@ export class AIController {
           query,
         },
       });
-    } catch (error: any) {
+    } catch (error: unknown) {
       logger.error('Generate SQL query error:', error);
       logApiRequest(req, res, Date.now() - startTime);
       
@@ -135,7 +136,7 @@ export class AIController {
           text,
         },
       });
-    } catch (error: any) {
+    } catch (error: unknown) {
       logger.error('Generate text error:', error);
       logApiRequest(req, res, Date.now() - startTime);
       
@@ -170,7 +171,7 @@ export class AIController {
         success: true,
         data: content,
       });
-    } catch (error: any) {
+    } catch (error: unknown) {
       logger.error('Get generated content error:', error);
       logApiRequest(req, res, Date.now() - startTime);
       
@@ -204,7 +205,7 @@ export class AIController {
         success: true,
         data: result,
       });
-    } catch (error: any) {
+    } catch (error: unknown) {
       logger.error('Delete generated content error:', error);
       logApiRequest(req, res, Date.now() - startTime);
       
@@ -243,7 +244,7 @@ export class AIController {
         success: true,
         data: results,
       });
-    } catch (error: any) {
+    } catch (error: unknown) {
       logger.error('Execute SQL query error:', error);
       logApiRequest(req, res, Date.now() - startTime);
       

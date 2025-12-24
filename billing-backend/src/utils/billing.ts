@@ -2,6 +2,38 @@ import { db } from '../config/database';
 import { bills, retailBusinesses } from '../models/drizzle/schema';
 import { eq, sql } from 'drizzle-orm';
 
+// Type interfaces for billing utility functions
+interface BillItem {
+  quantity: number;
+  rate: number;
+  discountPercent?: number;
+  taxPercent?: number;
+  productName?: string;
+}
+
+interface BillData {
+  status?: string;
+  dueDate?: Date | string | null;
+  subtotal?: number;
+  discountAmount?: number;
+  taxAmount?: number;
+  totalAmount?: number;
+  paidAmount?: number;
+  balanceAmount?: number;
+  items?: BillItem[];
+}
+
+interface InvoiceSettings {
+  prefix?: string;
+  suffix?: string;
+  startingNumber?: number;
+}
+
+interface BusinessSettings {
+  invoiceSettings?: InvoiceSettings;
+  [key: string]: unknown;
+}
+
 export async function generateBillNumber(businessId: string): Promise<string> {
   // Get business settings
   const [business] = await db
@@ -10,7 +42,7 @@ export async function generateBillNumber(businessId: string): Promise<string> {
     .where(eq(retailBusinesses.id, businessId))
     .limit(1);
 
-  const settings = business?.settings || {};
+  const settings = (business?.settings || {}) as BusinessSettings;
   const invoiceSettings = settings.invoiceSettings || {};
   
   const prefix = invoiceSettings.prefix || 'BILL';
@@ -41,7 +73,12 @@ export async function generateBillNumber(businessId: string): Promise<string> {
   return billNumber;
 }
 
-export function calculateBillTotals(items: any[], discountPercent: number = 0, taxPercent: number = 0) {
+export function calculateBillTotals(items: BillItem[], discountPercent: number = 0, taxPercent: number = 0): {
+  subtotal: number;
+  discountAmount: number;
+  taxAmount: number;
+  totalAmount: number;
+} {
   let subtotal = 0;
   let totalDiscount = 0;
   let totalTax = 0;
@@ -73,13 +110,14 @@ export function calculateBillTotals(items: any[], discountPercent: number = 0, t
   };
 }
 
-export function formatCurrency(amount: number, currency: string = 'INR'): string {
+export function formatCurrency(amount: number | string, currency: string = 'INR'): string {
+  const numAmount = typeof amount === 'string' ? parseFloat(amount) : amount;
   return new Intl.NumberFormat('en-IN', {
     style: 'currency',
     currency,
     minimumFractionDigits: 2,
     maximumFractionDigits: 2,
-  }).format(amount);
+  }).format(isNaN(numAmount) ? 0 : numAmount);
 }
 
 export function formatDate(date: Date, format: string = 'DD/MM/YYYY'): string {
@@ -106,7 +144,7 @@ export function calculateDueDate(billDate: Date, creditDays: number): Date {
   return dueDate;
 }
 
-export function isOverdue(bill: any): boolean {
+export function isOverdue(bill: BillData): boolean {
   if (bill.status === 'PAID') return false;
   if (!bill.dueDate) return false;
   
@@ -136,7 +174,17 @@ export function getBillStatusColor(status: string): string {
   }
 }
 
-export function generateBillSummary(bill: any, items: any[]) {
+export function generateBillSummary(bill: BillData, items: BillItem[]): {
+  itemCount: number;
+  totalQuantity: number;
+  subtotal: number | string | undefined;
+  discountAmount: number | string | undefined;
+  taxAmount: number | string | undefined;
+  totalAmount: number | string | undefined;
+  paidAmount: number | string | undefined;
+  balanceAmount: number | string | undefined;
+  status: string | undefined;
+} {
   const itemCount = items.length;
   const totalQuantity = items.reduce((sum, item) => sum + item.quantity, 0);
   
@@ -158,7 +206,7 @@ export async function getNextBillNumber(businessId: string): Promise<string> {
   return billNumber;
 }
 
-export function validateBillData(data: any): { valid: boolean; errors: string[] } {
+export function validateBillData(data: BillData): { valid: boolean; errors: string[] } {
   const errors: string[] = [];
 
   if (!data.items || data.items.length === 0) {

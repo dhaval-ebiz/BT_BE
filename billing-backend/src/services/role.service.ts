@@ -1,10 +1,25 @@
 import { db } from '../config/database';
-import { roles, permissions, businessStaff } from '../models/drizzle/schema';
+import { roles, permissions, businessStaff, permissionActionEnum, permissionResourceEnum } from '../models/drizzle/schema';
 import { eq, and, desc } from 'drizzle-orm';
 import { logger } from '../utils/logger';
 import { AuditService } from './audit.service';
 
 const auditService = new AuditService();
+
+// Type for permission conditions - typically JSON-based access rules
+interface PermissionConditions {
+  ownOnly?: boolean;
+  fields?: string[];
+  maxAmount?: number;
+  [key: string]: unknown;
+}
+
+// Type for permission input
+interface PermissionInput {
+  resource: string;
+  action: string;
+  conditions?: PermissionConditions;
+}
 
 export class RoleService {
   /**
@@ -15,7 +30,7 @@ export class RoleService {
     userId: string, // User performing the action
     name: string,
     description: string,
-    rolePermissions: { resource: string; action: string; conditions?: any }[]
+    rolePermissions: PermissionInput[]
   ) {
     try {
       // Create role
@@ -32,19 +47,23 @@ export class RoleService {
         .returning();
 
       // Add permissions
-      if (rolePermissions.length > 0) {
+      if (newRole && rolePermissions.length > 0) {
         await db.insert(permissions).values(
           rolePermissions.map((p) => ({
             roleId: newRole.id,
-            resource: p.resource as any,
-            action: p.action as any,
-            conditions: p.conditions,
+            resource: p.resource as typeof permissionResourceEnum.enumValues[number],
+            action: p.action as typeof permissionActionEnum.enumValues[number],
+            conditions: p.conditions as Record<string, unknown> | undefined,
             isAllowed: true
           }))
         );
       }
 
-      await auditService.logBusinessAction('CREATE_ROLE', businessId, userId, newRole.id, null, { name, permissions: rolePermissions });
+      if (!newRole) {
+        throw new Error('Failed to create role');
+      }
+
+      await auditService.logBusinessAction('CREATE_ROLE', businessId, userId, newRole.id, undefined, { name, permissions: rolePermissions });
       
       return newRole;
     } catch (error) {
@@ -120,7 +139,7 @@ export class RoleService {
     params: {
         name?: string;
         description?: string;
-        permissions?: { resource: string; action: string; conditions?: any }[];
+        permissions?: PermissionInput[];
     }
   ) {
     try {
@@ -163,9 +182,9 @@ export class RoleService {
             await db.insert(permissions).values(
                 params.permissions.map((p) => ({
                     roleId: roleId,
-                    resource: p.resource as any,
-                    action: p.action as any,
-                    conditions: p.conditions,
+                    resource: p.resource as typeof permissionResourceEnum.enumValues[number],
+                    action: p.action as typeof permissionActionEnum.enumValues[number],
+                    conditions: p.conditions as Record<string, unknown> | undefined,
                     isAllowed: true
                 }))
             );

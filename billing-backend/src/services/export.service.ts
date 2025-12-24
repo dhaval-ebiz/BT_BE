@@ -1,16 +1,54 @@
 import { db } from '../config/database';
 import { customers, bills, products, payments } from '../models/drizzle/schema';
-import { eq, sql } from 'drizzle-orm';
+import { eq, sql, and, SQL } from 'drizzle-orm';
 import { logger } from '../utils/logger';
 import { uploadToS3 } from '../utils/s3';
 import { format } from 'date-fns';
 
+// Filter interfaces for each export type
+interface CustomerExportFilters {
+  isActive?: boolean;
+  hasOutstanding?: boolean;
+}
+
+interface BillExportFilters {
+  status?: string;
+  customerId?: string;
+  startDate?: string;
+  endDate?: string;
+}
+
+interface ProductExportFilters {
+  categoryId?: string;
+  isActive?: boolean;
+  lowStock?: boolean;
+}
+
+interface PaymentExportFilters {
+  customerId?: string;
+  status?: string;
+  method?: string;
+  startDate?: string;
+  endDate?: string;
+}
+
 export class DataExportService {
-  async exportCustomers(businessId: string, filters: any): Promise<string> {
+  async exportCustomers(businessId: string, filters: CustomerExportFilters): Promise<string> {
     try {
       logger.info('Exporting customers', { businessId, filters });
       
-      let query = db
+      const conditions: SQL[] = [eq(customers.businessId, businessId)];
+
+      // Apply filters
+      if (filters.isActive !== undefined) {
+        conditions.push(eq(customers.isActive, filters.isActive));
+      }
+
+      if (filters.hasOutstanding) {
+        conditions.push(sql`${customers.outstandingBalance} > 0`);
+      }
+
+      const customersData = await db
         .select({
           id: customers.id,
           customerCode: customers.customerCode,
@@ -29,18 +67,7 @@ export class DataExportService {
           shippingAddress: customers.shippingAddress,
         })
         .from(customers)
-        .where(eq(customers.businessId, businessId));
-
-      // Apply filters
-      if (filters.isActive !== undefined) {
-        query = query.where(eq(customers.isActive, filters.isActive)) as any;
-      }
-
-      if (filters.hasOutstanding) {
-        query = query.where(sql`${customers.outstandingBalance} > 0`) as any;
-      }
-
-      const customersData = await query;
+        .where(and(...conditions));
       
       // Convert to CSV
       const csv = this.convertToCSV(customersData, [
@@ -71,11 +98,30 @@ export class DataExportService {
     }
   }
 
-  async exportBills(businessId: string, filters: any): Promise<string> {
+  async exportBills(businessId: string, filters: BillExportFilters): Promise<string> {
     try {
       logger.info('Exporting bills', { businessId, filters });
       
-      let query = db
+      const conditions: SQL[] = [eq(bills.businessId, businessId)];
+
+      // Apply filters
+      if (filters.status) {
+        conditions.push(sql`${bills.status} = ${filters.status}`);
+      }
+
+      if (filters.customerId) {
+        conditions.push(eq(bills.customerId, filters.customerId));
+      }
+
+      if (filters.startDate) {
+        conditions.push(sql`${bills.billDate} >= ${new Date(filters.startDate)}`);
+      }
+
+      if (filters.endDate) {
+        conditions.push(sql`${bills.billDate} <= ${new Date(filters.endDate)}`);
+      }
+
+      const billsData = await db
         .select({
           id: bills.id,
           billNumber: bills.billNumber,
@@ -93,26 +139,7 @@ export class DataExportService {
           createdAt: bills.createdAt,
         })
         .from(bills)
-        .where(eq(bills.businessId, businessId));
-
-      // Apply filters
-      if (filters.status) {
-        query = query.where(eq(bills.status, filters.status)) as any;
-      }
-
-      if (filters.customerId) {
-        query = query.where(eq(bills.customerId, filters.customerId)) as any;
-      }
-
-      if (filters.startDate) {
-        query = query.where(sql`${bills.billDate} >= ${new Date(filters.startDate)}`) as any;
-      }
-
-      if (filters.endDate) {
-        query = query.where(sql`${bills.billDate} <= ${new Date(filters.endDate)}`) as any;
-      }
-
-      const billsData = await query;
+        .where(and(...conditions));
       
       // Convert to CSV
       const csv = this.convertToCSV(billsData, [
@@ -144,11 +171,26 @@ export class DataExportService {
     }
   }
 
-  async exportProducts(businessId: string, filters: any): Promise<string> {
+  async exportProducts(businessId: string, filters: ProductExportFilters): Promise<string> {
     try {
       logger.info('Exporting products', { businessId, filters });
       
-      let query = db
+      const conditions: SQL[] = [eq(products.businessId, businessId)];
+
+      // Apply filters
+      if (filters.categoryId) {
+        conditions.push(eq(products.categoryId, filters.categoryId));
+      }
+
+      if (filters.isActive !== undefined) {
+        conditions.push(eq(products.isActive, filters.isActive));
+      }
+
+      if (filters.lowStock) {
+        conditions.push(sql`${products.currentStock} <= ${products.minimumStock}`);
+      }
+
+      const productsData = await db
         .select({
           id: products.id,
           productCode: products.productCode,
@@ -169,22 +211,7 @@ export class DataExportService {
           createdAt: products.createdAt,
         })
         .from(products)
-        .where(eq(products.businessId, businessId));
-
-      // Apply filters
-      if (filters.categoryId) {
-        query = query.where(eq(products.categoryId, filters.categoryId)) as any;
-      }
-
-      if (filters.isActive !== undefined) {
-        query = query.where(eq(products.isActive, filters.isActive)) as any;
-      }
-
-      if (filters.lowStock) {
-        query = query.where(sql`${products.currentStock} <= ${products.minimumStock}`) as any;
-      }
-
-      const productsData = await query;
+        .where(and(...conditions));
       
       // Convert to CSV
       const csv = this.convertToCSV(productsData, [
@@ -219,11 +246,33 @@ export class DataExportService {
     }
   }
 
-  async exportPayments(businessId: string, filters: any): Promise<string> {
+  async exportPayments(businessId: string, filters: PaymentExportFilters): Promise<string> {
     try {
       logger.info('Exporting payments', { businessId, filters });
       
-      let query = db
+      const conditions: SQL[] = [eq(payments.businessId, businessId)];
+
+      // Apply filters
+      if (filters.customerId) {
+        conditions.push(eq(payments.customerId, filters.customerId));
+      }
+
+      if (filters.status) {
+        conditions.push(sql`${payments.status} = ${filters.status}`);
+      }
+
+      if (filters.method) {
+        conditions.push(sql`${payments.method} = ${filters.method}`);
+      }
+
+      if (filters.startDate) {
+        conditions.push(sql`${payments.paymentDate} >= ${new Date(filters.startDate)}`);
+      }
+      if (filters.endDate) {
+        conditions.push(sql`${payments.paymentDate} <= ${new Date(filters.endDate)}`);
+      }
+
+      const paymentsData = await db
         .select({
           id: payments.id,
           paymentNumber: payments.paymentNumber,
@@ -233,35 +282,11 @@ export class DataExportService {
           status: payments.status,
           referenceNumber: payments.referenceNumber,
           customerId: payments.customerId,
-          billId: payments.billId,
           notes: payments.notes,
           createdAt: payments.createdAt,
         })
         .from(payments)
-        .where(eq(payments.businessId, businessId));
-
-      // Apply filters
-      if (filters.customerId) {
-        query = query.where(eq(payments.customerId, filters.customerId)) as any;
-      }
-
-      if (filters.status) {
-        query = query.where(eq(payments.status, filters.status)) as any;
-      }
-
-      if (filters.method) {
-        query = query.where(eq(payments.method, filters.method)) as any;
-      }
-
-      if (filters.startDate) {
-        query = query.where(sql`${payments.paymentDate} >= ${new Date(filters.startDate)}`) as any;
-      }
-
-      if (filters.endDate) {
-        query = query.where(sql`${payments.paymentDate} <= ${new Date(filters.endDate)}`) as any;
-      }
-
-      const paymentsData = await query;
+        .where(and(...conditions));
       
       // Convert to CSV
       const csv = this.convertToCSV(paymentsData, [
@@ -273,7 +298,6 @@ export class DataExportService {
         'status',
         'referenceNumber',
         'customerId',
-        'billId',
         'notes',
         'createdAt',
       ]);
@@ -355,7 +379,7 @@ export class DataExportService {
     }
   }
 
-  private convertToCSV(data: any[], columns: string[]): string {
+  private convertToCSV(data: Record<string, unknown>[], columns: string[]): string {
     if (!data || data.length === 0) {
       return columns.join(',') + '\n';
     }
@@ -366,7 +390,7 @@ export class DataExportService {
     // Data rows
     const csvRows = data.map(row => {
       return columns.map(column => {
-        let value = row[column];
+        let value: unknown = row[column];
         
         // Handle null/undefined values
         if (value === null || value === undefined) {
@@ -379,14 +403,14 @@ export class DataExportService {
         }
         
         // Convert to string and escape quotes
-        value = String(value);
+        let strValue = String(value);
         
         // Escape commas and quotes
-        if (value.includes(',') || value.includes('"') || value.includes('\n')) {
-          value = `"${value.replace(/"/g, '""')}"`;
+        if (strValue.includes(',') || strValue.includes('"') || strValue.includes('\n')) {
+          strValue = `"${strValue.replace(/"/g, '""')}"`;
         }
         
-        return value;
+        return strValue;
       }).join(',');
     }).join('\n');
     

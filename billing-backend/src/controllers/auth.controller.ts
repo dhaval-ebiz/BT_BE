@@ -1,4 +1,5 @@
 import { Request, Response } from 'express';
+import { getErrorMessage } from '../utils/errors';
 import { AuthService } from '../services/auth.service';
 import { 
   registerSchema, 
@@ -36,13 +37,13 @@ export class AuthController {
         success: true,
         data: result,
       });
-    } catch (error: any) {
+    } catch (error: unknown) {
       logger.error('Registration error:', error);
       logApiRequest(req, res, Date.now() - startTime);
       
       res.status(400).json({
         success: false,
-        message: error.message || 'Registration failed',
+        message: getErrorMessage(error) || 'Registration failed',
       });
     }
   }
@@ -60,13 +61,13 @@ export class AuthController {
         success: true,
         data: result,
       });
-    } catch (error: any) {
+    } catch (error: unknown) {
       logger.error('Login error:', error);
       logApiRequest(req, res, Date.now() - startTime);
       
       res.status(401).json({
         success: false,
-        message: error.message || 'Login failed',
+        message: getErrorMessage(error) || 'Login failed',
       });
     }
   }
@@ -84,13 +85,13 @@ export class AuthController {
         success: true,
         data: result,
       });
-    } catch (error: any) {
+    } catch (error: unknown) {
       logger.error('Token refresh error:', error);
       logApiRequest(req, res, Date.now() - startTime);
       
       res.status(401).json({
         success: false,
-        message: error.message || 'Token refresh failed',
+        message: getErrorMessage(error) || 'Token refresh failed',
       });
     }
   }
@@ -114,13 +115,13 @@ export class AuthController {
         success: true,
         data: result,
       });
-    } catch (error: any) {
+    } catch (error: unknown) {
       logger.error('Logout error:', error);
       logApiRequest(req, res, Date.now() - startTime);
       
       res.status(500).json({
         success: false,
-        message: error.message || 'Logout failed',
+        message: getErrorMessage(error) || 'Logout failed',
       });
     }
   }
@@ -138,13 +139,13 @@ export class AuthController {
         success: true,
         data: result,
       });
-    } catch (error: any) {
+    } catch (error: unknown) {
       logger.error('Forgot password error:', error);
       logApiRequest(req, res, Date.now() - startTime);
       
       res.status(500).json({
         success: false,
-        message: error.message || 'Password reset request failed',
+        message: getErrorMessage(error) || 'Password reset request failed',
       });
     }
   }
@@ -162,13 +163,13 @@ export class AuthController {
         success: true,
         data: result,
       });
-    } catch (error: any) {
+    } catch (error: unknown) {
       logger.error('Reset password error:', error);
       logApiRequest(req, res, Date.now() - startTime);
       
       res.status(400).json({
         success: false,
-        message: error.message || 'Password reset failed',
+        message: getErrorMessage(error) || 'Password reset failed',
       });
     }
   }
@@ -193,13 +194,13 @@ export class AuthController {
         success: true,
         data: result,
       });
-    } catch (error: any) {
+    } catch (error: unknown) {
       logger.error('Change password error:', error);
       logApiRequest(req, res, Date.now() - startTime);
       
       res.status(400).json({
         success: false,
-        message: error.message || 'Password change failed',
+        message: getErrorMessage(error) || 'Password change failed',
       });
     }
   }
@@ -247,13 +248,13 @@ export class AuthController {
           createdAt: user.createdAt,
         },
       });
-    } catch (error: any) {
+    } catch (error: unknown) {
       logger.error('Get profile error:', error);
       logApiRequest(req, res, Date.now() - startTime);
       
       res.status(500).json({
         success: false,
-        message: error.message || 'Failed to get profile',
+        message: getErrorMessage(error) || 'Failed to get profile',
       });
     }
   }
@@ -278,13 +279,13 @@ export class AuthController {
         success: true,
         data: result,
       });
-    } catch (error: any) {
+    } catch (error: unknown) {
       logger.error('Update profile error:', error);
       logApiRequest(req, res, Date.now() - startTime);
       
       res.status(400).json({
         success: false,
-        message: error.message || 'Profile update failed',
+        message: getErrorMessage(error) || 'Profile update failed',
       });
     }
   }
@@ -302,13 +303,13 @@ export class AuthController {
         success: true,
         data: result,
       });
-    } catch (error: any) {
+    } catch (error: unknown) {
       logger.error('Email verification error:', error);
       logApiRequest(req, res, Date.now() - startTime);
       
       res.status(400).json({
         success: false,
-        message: error.message || 'Email verification failed',
+        message: getErrorMessage(error) || 'Email verification failed',
       });
     }
   }
@@ -326,13 +327,13 @@ export class AuthController {
         success: true,
         data: result,
       });
-    } catch (error: any) {
+    } catch (error: unknown) {
       logger.error('Resend verification error:', error);
       logApiRequest(req, res, Date.now() - startTime);
       
       res.status(500).json({
         success: false,
-        message: error.message || 'Failed to resend verification email',
+        message: getErrorMessage(error) || 'Failed to resend verification email',
       });
     }
   }
@@ -344,10 +345,10 @@ export class AuthController {
       const result = await authService.verifyPhone(token);
       logApiRequest(req, res, Date.now() - startTime);
       res.json({ success: true, data: result });
-    } catch (error: any) {
+    } catch (error: unknown) {
       logger.error('Phone verification error:', error);
       logApiRequest(req, res, Date.now() - startTime);
-      res.status(400).json({ success: false, message: error.message || 'Verification failed' });
+      res.status(400).json({ success: false, message: getErrorMessage(error) || 'Verification failed' });
     }
   }
 
@@ -358,10 +359,10 @@ export class AuthController {
       const result = await authService.enable2FA(req.user.id);
       logApiRequest(req, res, Date.now() - startTime);
       res.json({ success: true, data: result });
-    } catch (error: any) {
+    } catch (error: unknown) {
       logger.error('Enable 2FA error:', error);
       logApiRequest(req, res, Date.now() - startTime);
-      res.status(500).json({ success: false, message: error.message });
+      res.status(500).json({ success: false, message: getErrorMessage(error) });
     }
   }
 
@@ -373,10 +374,10 @@ export class AuthController {
       const result = await authService.verify2FA(req.user.id, validatedData);
       logApiRequest(req, res, Date.now() - startTime);
       res.json({ success: true, data: result });
-    } catch (error: any) {
+    } catch (error: unknown) {
       logger.error('Verify 2FA error:', error);
       logApiRequest(req, res, Date.now() - startTime);
-      res.status(400).json({ success: false, message: error.message });
+      res.status(400).json({ success: false, message: getErrorMessage(error) });
     }
   }
 
@@ -388,10 +389,10 @@ export class AuthController {
       const result = await authService.disable2FA(req.user.id, token);
       logApiRequest(req, res, Date.now() - startTime);
       res.json({ success: true, data: result });
-    } catch (error: any) {
+    } catch (error: unknown) {
       logger.error('Disable 2FA error:', error);
       logApiRequest(req, res, Date.now() - startTime);
-      res.status(400).json({ success: false, message: error.message });
+      res.status(400).json({ success: false, message: getErrorMessage(error) });
     }
   }
 }

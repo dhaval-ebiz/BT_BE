@@ -199,18 +199,16 @@ Important Rules:
   }
 
   async getGeneratedContent(businessId: string, type?: string, limit: number = 20) {
-    let query = db
+    const conditions = type 
+      ? and(eq(aiGeneratedContent.businessId, businessId), eq(aiGeneratedContent.type, type))
+      : eq(aiGeneratedContent.businessId, businessId);
+
+    return await db
       .select()
       .from(aiGeneratedContent)
-      .where(eq(aiGeneratedContent.businessId, businessId))
+      .where(conditions)
       .orderBy(desc(aiGeneratedContent.createdAt))
       .limit(limit);
-
-    if (type) {
-      query = query.where(eq(aiGeneratedContent.type, type)) as any;
-    }
-
-    return await query;
   }
 
   async deleteGeneratedContent(businessId: string, contentId: string) {
@@ -231,7 +229,7 @@ Important Rules:
     return { message: 'Content deleted successfully' };
   }
 
-  async executeSQLQuery(query: string, businessId: string): Promise<any> {
+  async executeSQLQuery(query: string, businessId: string): Promise<Record<string, unknown>[]> {
     try {
       // Verify the query is safe
       const dangerousKeywords = ['DELETE', 'UPDATE', 'INSERT', 'DROP', 'ALTER', 'CREATE'];

@@ -1,4 +1,5 @@
 import { Response } from 'express';
+import { getErrorMessage } from '../utils/errors';
 import { BillingService } from '../services/billing.service';
 import { BusinessRequest } from '../middleware/auth.middleware';
 import { 
@@ -8,6 +9,19 @@ import {
   billPaymentSchema 
 } from '../schemas/bill.schema';
 import { logApiRequest, logger } from '../utils/logger';
+
+// Type for bill with relations
+interface BillWithRelations {
+  bill: {
+    id: string;
+    billNumber: string;
+    totalAmount: string | number;
+    customer?: {
+      email?: string;
+    };
+  };
+  items: unknown[];
+}
 
 const billingService = new BillingService();
 
@@ -29,7 +43,7 @@ export class BillingController {
       
       logApiRequest(req, res, Date.now() - startTime);
       res.status(201).json({ success: true, data: bill });
-    } catch (error: any) {
+    } catch (error: unknown) {
       logger.error('Create bill error:', error);
       logApiRequest(req, res, Date.now() - startTime);
       res.status(500).json({ success: false, message: error.message });
@@ -48,7 +62,7 @@ export class BillingController {
       res.json({ success: true, data: bill });
       logApiRequest(req, res, Date.now() - startTime);
       res.json({ success: true, data: bill });
-    } catch (error: any) {
+    } catch (error: unknown) {
         logger.error('Get bill error:', error);
         logApiRequest(req, res, Date.now() - startTime);
         res.status(404).json({ success: false, message: error.message });
@@ -70,7 +84,7 @@ export class BillingController {
         
         logApiRequest(req, res, Date.now() - startTime);
         res.json({ success: true, data: result });
-    } catch (error: any) {
+    } catch (error: unknown) {
         logger.error('Update bill error:', error);
         logApiRequest(req, res, Date.now() - startTime);
         res.status(500).json({ success: false, message: error.message });
@@ -88,7 +102,7 @@ export class BillingController {
         // For now, passing req.query directly to schema check which allows some coercion if configured or passed correctly.
         
         // Parse query params manually for numbers/booleans if needed:
-        const constructedQuery: any = { ...req.query };
+        const constructedQuery: Record<string, unknown> = { ...req.query };
         if (req.query.page) constructedQuery.page = Number(req.query.page);
         if (req.query.limit) constructedQuery.limit = Number(req.query.limit);
         if (req.query.minAmount) constructedQuery.minAmount = Number(req.query.minAmount);
@@ -104,7 +118,7 @@ export class BillingController {
         
         logApiRequest(req, res, Date.now() - startTime);
         res.json({ success: true, data: result });
-    } catch (error: any) {
+    } catch (error: unknown) {
         logger.error('List bills error:', error);
         logApiRequest(req, res, Date.now() - startTime);
         res.status(500).json({ success: false, message: error.message });
@@ -126,7 +140,7 @@ export class BillingController {
         
         logApiRequest(req, res, Date.now() - startTime);
         res.status(201).json({ success: true, data: result });
-    } catch (error: any) {
+    } catch (error: unknown) {
         logger.error('Record payment error:', error);
         logApiRequest(req, res, Date.now() - startTime);
         res.status(500).json({ success: false, message: error.message });
@@ -152,7 +166,7 @@ export class BillingController {
         doc.end();
         
         logApiRequest(req, res, Date.now() - startTime);
-    } catch (error: any) {
+    } catch (error: unknown) {
         logger.error('Generate invoice PDF error:', error);
         logApiRequest(req, res, Date.now() - startTime);
         if (!res.headersSent) {
@@ -172,7 +186,7 @@ export class BillingController {
         // 1. Get Bill to check existence and customer email if not provided
         const bill = await billingService.getBill(req.business.id, billId);
         
-        const targetEmail = email || (bill as any).customer?.email;
+        const targetEmail = email || (bill as BillWithRelations).bill?.customer?.email;
         if (!targetEmail) {
             return res.status(400).json({ success: false, message: 'No email provided and customer has no email on record.' });
         }
@@ -184,7 +198,7 @@ export class BillingController {
         const doc = await invoiceService.generateInvoicePdf(req.business.id, billId);
 
         // 3. Convert PDF Stream to Buffer
-        const buffers: any[] = [];
+        const buffers: Buffer[] = [];
         doc.on('data', (chunk) => buffers.push(chunk));
         
         // Wait for stream to finish
@@ -204,8 +218,8 @@ export class BillingController {
         await sendEmail({
             to: targetEmail,
             subject: `Invoice ${bill.billNumber} from ${req.business.name}`,
-            text: `Dear Customer,\n\nPlease find attached your invoice ${bill.billNumber} for amount ${(bill as any).totalAmount}.\n\nThank you,\n${req.business.name}`,
-            html: `<p>Dear Customer,</p><p>Please find attached your invoice <strong>${bill.billNumber}</strong> for amount <strong>${(bill as any).totalAmount}</strong>.</p><p>Thank you,<br/>${req.business.name}</p>`,
+            text: `Dear Customer,\n\nPlease find attached your invoice ${bill.billNumber} for amount ${(bill as BillWithRelations).bill?.totalAmount || 'N/A'}.\n\nThank you,\n${req.business.name}`,
+            html: `<p>Dear Customer,</p><p>Please find attached your invoice <strong>${bill.billNumber}</strong> for amount <strong>${(bill as BillWithRelations).bill?.totalAmount || 'N/A'}</strong>.</p><p>Thank you,<br/>${req.business.name}</p>`,
             attachments: [
                 {
                     filename: `Invoice-${bill.billNumber}.pdf`,
@@ -217,7 +231,7 @@ export class BillingController {
         logApiRequest(req, res, Date.now() - startTime);
         res.json({ success: true, message: 'Invoice sent successfully' });
 
-    } catch (error: any) {
+    } catch (error: unknown) {
         logger.error('Share bill error:', error);
         logApiRequest(req, res, Date.now() - startTime);
         res.status(500).json({ success: false, message: error.message });

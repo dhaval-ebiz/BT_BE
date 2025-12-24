@@ -1,4 +1,5 @@
 import { Response } from 'express';
+import { getErrorMessage } from '../utils/errors';
 import { FileService } from '../services/file.service';
 import { logger, logApiRequest } from '../utils/logger';
 import { AuditService } from '../services/audit.service';
@@ -39,7 +40,7 @@ export class FileController {
         success: true,
         data: result,
       });
-    } catch (error: any) {
+    } catch (error: unknown) {
       logger.error('Upload file error', { error });
       res.status(500).json({
         success: false,
@@ -69,7 +70,7 @@ export class FileController {
         success: true,
         data: results,
       });
-    } catch (error: any) {
+    } catch (error: unknown) {
       logger.error('Upload multiple files error', { error });
       res.status(500).json({
         success: false,
@@ -97,7 +98,7 @@ export class FileController {
       } else {
         res.sendFile(urlOrPath, { root: '.' }); 
       }
-    } catch (error: any) {
+    } catch (error: unknown) {
       logger.error('Get file error', { error });
       res.status(404).json({
         success: false,
@@ -126,7 +127,7 @@ export class FileController {
         success: true,
         message: 'File deleted successfully',
       });
-    } catch (error: any) {
+    } catch (error: unknown) {
       logger.error('Delete file error', { error });
       res.status(500).json({
         success: false,
@@ -149,7 +150,7 @@ export class FileController {
           expiresAt: new Date(Date.now() + expiresIn * 1000).toISOString(),
         },
       });
-    } catch (error: any) {
+    } catch (error: unknown) {
       logger.error('Get signed URL error', { error });
       res.status(500).json({
         success: false,

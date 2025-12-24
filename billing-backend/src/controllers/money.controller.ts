@@ -1,4 +1,5 @@
 import { Response } from 'express';
+import { getErrorMessage } from '../utils/errors';
 import { BusinessRequest } from '../middleware/auth.middleware';
 import { MoneyService } from '../services/money.service';
 import { expenseCategorySchema, createExpenseSchema, expenseQuerySchema } from '../schemas/money.schema';
@@ -22,7 +23,7 @@ export class MoneyController {
         const category = await moneyService.createCategory(req.business.id, validation.data);
         logApiRequest(req, res, Date.now() - startTime);
         res.status(201).json({ success: true, data: category });
-    } catch (error: any) {
+    } catch (error: unknown) {
         logger.error('Create category error:', error);
         res.status(500).json({ success: false, message: error.message });
     }
@@ -34,7 +35,7 @@ export class MoneyController {
         const { type } = req.query;
         const categories = await moneyService.listCategories(req.business.id, type as 'EXPENSE' | 'INCOME');
         res.json({ success: true, data: categories });
-    } catch (error: any) {
+    } catch (error: unknown) {
         res.status(500).json({ success: false, message: error.message });
     }
   }
@@ -52,7 +53,7 @@ export class MoneyController {
         const expense = await moneyService.createExpense(req.business.id, req.user.id, validation.data, req);
         logApiRequest(req, res, Date.now() - startTime);
         res.status(201).json({ success: true, data: expense });
-    } catch (error: any) {
+    } catch (error: unknown) {
         logger.error('Create expense error:', error);
         res.status(500).json({ success: false, message: error.message });
     }
@@ -78,7 +79,7 @@ export class MoneyController {
 
         const result = await moneyService.listExpenses(req.business.id, validation.data);
         res.json({ success: true, data: result });
-    } catch (error: any) {
+    } catch (error: unknown) {
         res.status(500).json({ success: false, message: error.message });
     }
   }
@@ -94,7 +95,7 @@ export class MoneyController {
             endDate as string
         );
         res.json({ success: true, data: summary });
-    } catch (error: any) {
+    } catch (error: unknown) {
         res.status(500).json({ success: false, message: error.message });
     }
   }

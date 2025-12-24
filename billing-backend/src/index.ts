@@ -26,6 +26,7 @@ import analyticsRoutes from './routes/analytics.routes';
 import billApprovalRoutes from './routes/bill-approval.routes';
 import permissionRoutes from './routes/permission.routes';
 import { moneyRoutes } from './routes/money.routes';
+import moneyManagementRoutes from './routes/money-management.routes';
 import reportRoutes from './routes/report.routes';
 
 // Load environment variables
@@ -102,6 +103,7 @@ app.use('/api/analytics', analyticsRoutes);
 app.use('/api/bill-approval', billApprovalRoutes);
 app.use('/api/permissions', permissionRoutes);
 app.use('/api/money', moneyRoutes);
+app.use('/api/money-management', moneyManagementRoutes);
 app.use('/api/reports', reportRoutes);
 
 // Request logging middleware (after routes)

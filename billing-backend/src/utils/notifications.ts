@@ -4,12 +4,46 @@ import { sendWhatsAppMessage } from './whatsapp';
 import { sendEmail } from './email';
 import { formatCurrency } from './billing';
 
+// Type interfaces for notification functions
+interface NotificationBill {
+  id: string;
+  billNumber: string;
+  billDate: Date;
+  dueDate?: Date | null;
+  totalAmount: number | string;
+  paidAmount: number | string;
+  balanceAmount: number | string;
+}
+
+interface NotificationBillItem {
+  productName: string;
+  quantity: number;
+  unit: string;
+  rate: number | string;
+  totalAmount: number | string;
+}
+
+interface NotificationPayment {
+  id: string;
+  amount: number | string;
+  method: string;
+  paymentDate: Date;
+}
+
+interface NotificationProduct {
+  name: string;
+  productCode: string;
+  currentStock: number;
+  minimumStock: number;
+  unit: string;
+}
+
 export async function sendBillNotification(
   type: 'email' | 'sms' | 'whatsapp',
   recipient: string,
-  bill: any,
-  items: any[]
-) {
+  bill: NotificationBill,
+  items: NotificationBillItem[]
+): Promise<void> {
   try {
     const subject = `Bill ${bill.billNumber} - ${formatCurrency(bill.totalAmount)}`;
     
@@ -106,9 +140,9 @@ Thank you for your business!
 export async function sendPaymentConfirmation(
   type: 'email' | 'sms' | 'whatsapp',
   recipient: string,
-  payment: any,
-  bill: any
-) {
+  payment: NotificationPayment,
+  bill: NotificationBill
+): Promise<void> {
   try {
     const subject = `Payment Received - ${formatCurrency(payment.amount)}`;
     
@@ -151,8 +185,8 @@ Thank you for your payment!
 export async function sendOverdueReminder(
   type: 'email' | 'sms' | 'whatsapp',
   recipient: string,
-  bill: any
-) {
+  bill: NotificationBill
+): Promise<void> {
   try {
     const subject = `Overdue Bill Reminder - ${bill.billNumber}`;
     
@@ -197,8 +231,8 @@ Thank you!
 export async function sendLowStockAlert(
   type: 'email' | 'sms' | 'whatsapp',
   recipient: string,
-  products: any[]
-) {
+  products: NotificationProduct[]
+): Promise<void> {
   try {
     const subject = 'Low Stock Alert';
     

@@ -50,7 +50,7 @@ export class MerchantService {
       .values({
         businessId,
         merchantCode: finalMerchantCode,
-        ...(input as any),
+        name,
         contactPerson,
         email,
         phone,

@@ -1,6 +1,55 @@
-import { Queue, Worker, Job } from 'bullmq';
+import { Queue, Worker, Job, RepeatOptions } from 'bullmq';
 import { redis } from '../config/redis';
 import { logger, logBackgroundJob } from '../utils/logger';
+
+// Job data type interfaces
+interface CleanupData {
+  daysOld?: number;
+}
+
+interface ReportData {
+  businessId: string;
+  reportType: string;
+  dateRange?: { start: Date; end: Date };
+}
+
+interface BackupData {
+  businessId: string;
+  backupType: string;
+}
+
+interface BillNotificationData {
+  type: 'email' | 'sms' | 'whatsapp';
+  recipient: string;
+  billId: string;
+  businessId: string;
+}
+
+interface PaymentReminderData {
+  customerId: string;
+  businessId: string;
+  type: 'email' | 'sms' | 'whatsapp';
+}
+
+interface LowStockAlertData {
+  businessId: string;
+}
+
+interface AIGenerationData {
+  prompt: string;
+  style?: string;
+}
+
+interface ExportFilters {
+  status?: string;
+  customerId?: string;
+  startDate?: string;
+  endDate?: string;
+  categoryId?: string;
+  isActive?: boolean;
+  hasOutstanding?: boolean;
+  lowStock?: boolean;
+}
 
 // Queue names
 export const QUEUE_NAMES = {
@@ -352,7 +401,7 @@ export function setupWorkers() {
 }
 
 // Background task processors
-async function cleanupOldData(data: any) {
+async function cleanupOldData(data: CleanupData): Promise<void> {
   const { db } = await import('../config/database');
   const { auditLogs, messages } = await import('../models/drizzle/schema');
   const { sql } = await import('drizzle-orm');
@@ -370,14 +419,14 @@ async function cleanupOldData(data: any) {
   logger.info('Old data cleaned up', { cutoffDate });
 }
 
-async function generateReports(data: any) {
+async function generateReports(data: ReportData): Promise<void> {
   const { businessId, reportType, dateRange } = data;
   
   // Implement report generation logic
   logger.info('Report generated', { businessId, reportType, dateRange });
 }
 
-async function backupData(data: any) {
+async function backupData(data: BackupData): Promise<void> {
   const { businessId, backupType } = data;
   
   // Implement backup logic
@@ -385,7 +434,7 @@ async function backupData(data: any) {
 }
 
 // Utility functions for adding jobs
-export async function addBillNotificationJob(data: any, delay?: number) {
+export async function addBillNotificationJob(data: BillNotificationData, delay?: number): Promise<Job> {
   const job = await billNotificationQueue.add('send-bill-notification', data, {
     delay,
     attempts: 3,
@@ -393,7 +442,7 @@ export async function addBillNotificationJob(data: any, delay?: number) {
   return job;
 }
 
-export async function addPaymentReminderJob(data: any, repeat?: any) {
+export async function addPaymentReminderJob(data: PaymentReminderData, repeat?: RepeatOptions): Promise<Job> {
   const job = await paymentReminderQueue.add('send-payment-reminder', data, {
     repeat,
     attempts: 2,
@@ -401,14 +450,14 @@ export async function addPaymentReminderJob(data: any, repeat?: any) {
   return job;
 }
 
-export async function addLowStockAlertJob(data: any) {
+export async function addLowStockAlertJob(data: LowStockAlertData): Promise<Job> {
   const job = await lowStockAlertQueue.add('check-low-stock', data, {
     attempts: 2,
   });
   return job;
 }
 
-export async function addBackgroundTaskJob(task: string, data: any, delay?: number) {
+export async function addBackgroundTaskJob(task: string, data: CleanupData | ReportData | BackupData, delay?: number): Promise<Job> {
   const job = await backgroundTaskQueue.add('process-task', { task, data }, {
     delay,
     attempts: 5,
@@ -416,14 +465,14 @@ export async function addBackgroundTaskJob(task: string, data: any, delay?: numb
   return job;
 }
 
-export async function addAIGenerationJob(type: string, data: any, userId: string, businessId: string) {
+export async function addAIGenerationJob(type: string, data: AIGenerationData, userId: string, businessId: string): Promise<Job> {
   const job = await aiGenerationQueue.add('generate-content', { type, data, userId, businessId }, {
     attempts: 2,
   });
   return job;
 }
 
-export async function addDataExportJob(type: string, filters: any, userId: string, businessId: string) {
+export async function addDataExportJob(type: string, filters: ExportFilters, userId: string, businessId: string): Promise<Job> {
   const job = await dataExportQueue.add('export-data', { type, filters, userId, businessId }, {
     attempts: 3,
   });

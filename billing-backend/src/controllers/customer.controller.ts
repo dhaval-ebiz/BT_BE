@@ -1,4 +1,5 @@
 import { Request, Response } from 'express';
+import { getErrorMessage } from '../utils/errors';
 import { CustomerService } from '../services/customer.service';
 import { 
   CreateCustomerInput, 
@@ -33,7 +34,7 @@ export class CustomerController {
         success: true,
         data: customer,
       });
-    } catch (error: any) {
+    } catch (error: unknown) {
       logger.error('Create customer error:', error);
       logApiRequest(req, res, Date.now() - startTime);
       
@@ -66,7 +67,7 @@ export class CustomerController {
         success: true,
         data: customer,
       });
-    } catch (error: any) {
+    } catch (error: unknown) {
       logger.error('Get customer error:', error);
       logApiRequest(req, res, Date.now() - startTime);
       
@@ -100,7 +101,7 @@ export class CustomerController {
         success: true,
         data: customer,
       });
-    } catch (error: any) {
+    } catch (error: unknown) {
       logger.error('Update customer error:', error);
       logApiRequest(req, res, Date.now() - startTime);
       
@@ -133,7 +134,7 @@ export class CustomerController {
         success: true,
         data: result,
       });
-    } catch (error: any) {
+    } catch (error: unknown) {
       logger.error('Delete customer error:', error);
       logApiRequest(req, res, Date.now() - startTime);
       
@@ -166,7 +167,7 @@ export class CustomerController {
         success: true,
         data: result,
       });
-    } catch (error: any) {
+    } catch (error: unknown) {
       logger.error('Get customers error:', error);
       logApiRequest(req, res, Date.now() - startTime);
       
@@ -201,7 +202,7 @@ export class CustomerController {
         success: true,
         data: payment,
       });
-    } catch (error: any) {
+    } catch (error: unknown) {
       logger.error('Add customer payment error:', error);
       logApiRequest(req, res, Date.now() - startTime);
       
@@ -235,7 +236,7 @@ export class CustomerController {
         success: true,
         data: statement,
       });
-    } catch (error: any) {
+    } catch (error: unknown) {
       logger.error('Get customer statement error:', error);
       logApiRequest(req, res, Date.now() - startTime);
       
@@ -267,7 +268,7 @@ export class CustomerController {
         success: true,
         data: stats,
       });
-    } catch (error: any) {
+    } catch (error: unknown) {
       logger.error('Get customer stats error:', error);
       logApiRequest(req, res, Date.now() - startTime);
       

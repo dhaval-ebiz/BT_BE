@@ -1,4 +1,5 @@
 import { Response } from 'express';
+import { getErrorMessage } from '../utils/errors';
 import { QrService } from '../services/qr.service';
 import { BusinessRequest } from '../middleware/auth.middleware';
 import { generateQrBatchSchema } from '../schemas/qr.schema';
@@ -37,7 +38,7 @@ export class QrController {
         success: true,
         data: result,
       });
-    } catch (error: any) {
+    } catch (error: unknown) {
       logger.error('Generate QR batch error:', error);
       logApiRequest(req, res, Date.now() - startTime);
       
@@ -68,7 +69,7 @@ export class QrController {
         success: true,
         data: batches,
       });
-    } catch (error: any) {
+    } catch (error: unknown) {
       logger.error('Get QR batches error:', error);
       logApiRequest(req, res, Date.now() - startTime);
       

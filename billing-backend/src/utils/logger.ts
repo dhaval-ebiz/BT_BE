@@ -1,5 +1,6 @@
 import winston from 'winston';
 import path from 'path';
+import { Request, Response } from 'express';
 
 const logFormat = winston.format.combine(
   winston.format.timestamp(),
@@ -171,7 +172,7 @@ if (process.env.NODE_ENV !== 'production') {
 }
 
 // Utility functions for structured logging
-export const logApiRequest = (req: any, res: any, duration: number) => {
+export const logApiRequest = (req: Request, res: Response, duration: number): void => {
   logger.info('API Request', {
     method: req.method,
     url: req.url,
@@ -179,12 +180,12 @@ export const logApiRequest = (req: any, res: any, duration: number) => {
     duration: `${duration}ms`,
     userAgent: req.get('User-Agent'),
     ip: req.ip,
-    userId: req.user?.id,
-    businessId: req.business?.id,
+    userId: (req as Request & { user?: { id: string } }).user?.id,
+    businessId: (req as Request & { business?: { id: string } }).business?.id,
   });
 };
 
-export const logDatabaseQuery = (query: string, duration: number, error?: any) => {
+export const logDatabaseQuery = (query: string, duration: number, error?: Error): void => {
   dbLogger.info('Database Query', {
     query: query.substring(0, 500), // Limit query length
     duration: `${duration}ms`,
@@ -192,7 +193,7 @@ export const logDatabaseQuery = (query: string, duration: number, error?: any) =
   });
 };
 
-export const logAuthEvent = (event: string, userId: string, metadata?: any) => {
+export const logAuthEvent = (event: string, userId: string, metadata?: Record<string, unknown>): void => {
   authLogger.info('Auth Event', {
     event,
     userId,
@@ -201,7 +202,7 @@ export const logAuthEvent = (event: string, userId: string, metadata?: any) => {
   });
 };
 
-export const logSecurityEvent = (event: string, severity: 'low' | 'medium' | 'high' | 'critical', metadata?: any) => {
+export const logSecurityEvent = (event: string, severity: 'low' | 'medium' | 'high' | 'critical', metadata?: Record<string, unknown>): void => {
   authLogger.warn('Security Event', {
     event,
     severity,
@@ -210,7 +211,7 @@ export const logSecurityEvent = (event: string, severity: 'low' | 'medium' | 'hi
   });
 };
 
-export const logBackgroundJob = (jobName: string, status: 'started' | 'completed' | 'failed', metadata?: any) => {
+export const logBackgroundJob = (jobName: string, status: 'started' | 'completed' | 'failed', metadata?: Record<string, unknown>): void => {
   jobLogger.info('Background Job', {
     jobName,
     status,
@@ -219,7 +220,7 @@ export const logBackgroundJob = (jobName: string, status: 'started' | 'completed
   });
 };
 
-export const logAiOperation = (operation: string, status: 'started' | 'completed' | 'failed', metadata?: any) => {
+export const logAiOperation = (operation: string, status: 'started' | 'completed' | 'failed', metadata?: Record<string, unknown>): void => {
   aiLogger.info('AI Operation', {
     operation,
     status,
@@ -229,7 +230,7 @@ export const logAiOperation = (operation: string, status: 'started' | 'completed
 };
 
 // Error logging with stack trace
-export const logError = (error: Error, context?: any) => {
+export const logError = (error: Error, context?: Record<string, unknown>): void => {
   logger.error('Application Error', {
     message: error.message,
     stack: error.stack,
@@ -239,7 +240,7 @@ export const logError = (error: Error, context?: any) => {
 };
 
 // Performance logging
-export const logPerformance = (operation: string, duration: number, metadata?: any) => {
+export const logPerformance = (operation: string, duration: number, metadata?: Record<string, unknown>): void => {
   logger.info('Performance', {
     operation,
     duration: `${duration}ms`,

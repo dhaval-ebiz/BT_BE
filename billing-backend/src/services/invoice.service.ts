@@ -4,6 +4,24 @@ import { retailBusinesses } from '../models/drizzle/schema';
 import { db } from '../config/database';
 import { eq } from 'drizzle-orm';
 
+// Interface for bill items used in invoice
+interface InvoiceItem {
+  productName: string;
+  quantity: string | number;
+  rate: string | number;
+  totalAmount: string | number;
+}
+
+// Interface for bill with relations
+interface BillWithRelations {
+  customer?: {
+    name?: string;
+    phone?: string;
+    email?: string;
+  };
+  items?: InvoiceItem[];
+}
+
 const billingService = new BillingService();
 
 export class InvoiceService {
@@ -43,7 +61,7 @@ export class InvoiceService {
     doc.moveDown(2);
 
     // BILL TO
-    const customer = (bill as any).customer; // relations populated
+    const customer = (bill as unknown as BillWithRelations).customer;
     doc
         .fontSize(12).text('Bill To:', 50, 150)
         .fontSize(10)
@@ -64,7 +82,7 @@ export class InvoiceService {
 
     // ITEMS
     let y = tableTop + 25;
-    const items: any[] = (bill as any).items;
+    const items: InvoiceItem[] = (bill as unknown as BillWithRelations).items || [];
     
     for (const item of items) {
         doc.text(item.productName, 50, y);

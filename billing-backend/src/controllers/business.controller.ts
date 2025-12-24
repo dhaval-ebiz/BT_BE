@@ -1,4 +1,5 @@
 import { Response } from 'express';
+import { getErrorMessage } from '../utils/errors';
 import { BusinessService } from '../services/business.service';
 import { 
   createBusinessSchema, 
@@ -33,7 +34,7 @@ export class BusinessController {
         // const businesses = await businessService.getUserBusinesses(req.user.id);
         
         return res.status(200).json({ success: true, data: [] });
-    } catch (error: any) {
+    } catch (error: unknown) {
         return res.status(500).json({ success: false, message: error.message });
     }
   }
@@ -59,7 +60,7 @@ export class BusinessController {
         success: true,
         data: business,
       });
-    } catch (error: any) {
+    } catch (error: unknown) {
       logger.error('Create business error:', error);
       return res.status(500).json({
         success: false,
@@ -77,7 +78,7 @@ export class BusinessController {
         success: true,
         data: business,
       });
-    } catch (error: any) {
+    } catch (error: unknown) {
       logger.error('Get business error:', error);
       return res.status(500).json({
         success: false,
@@ -104,7 +105,7 @@ export class BusinessController {
         success: true,
         data: business,
       });
-    } catch (error: any) {
+    } catch (error: unknown) {
       logger.error('Update business error:', error);
       return res.status(500).json({
         success: false,
@@ -122,7 +123,7 @@ export class BusinessController {
         success: true,
         data: settings,
       });
-    } catch (error: any) {
+    } catch (error: unknown) {
       logger.error('Get settings error:', error);
       return res.status(500).json({
         success: false,
@@ -149,7 +150,7 @@ export class BusinessController {
         success: true,
         data: settings,
       });
-    } catch (error: any) {
+    } catch (error: unknown) {
       logger.error('Update settings error:', error);
       return res.status(500).json({
         success: false,
@@ -169,7 +170,7 @@ export class BusinessController {
         success: true,
         data: staff,
       });
-    } catch (error: any) {
+    } catch (error: unknown) {
       logger.error('Get staff error:', error);
       return res.status(500).json({
         success: false,
@@ -196,7 +197,7 @@ export class BusinessController {
         success: true,
         data: staff,
       });
-    } catch (error: any) {
+    } catch (error: unknown) {
       logger.error('Invite staff error:', error);
       return res.status(500).json({
         success: false,
@@ -224,7 +225,7 @@ export class BusinessController {
         success: true,
         data: staff,
       });
-    } catch (error: any) {
+    } catch (error: unknown) {
       logger.error('Update staff error:', error);
       return res.status(500).json({
         success: false,
@@ -244,7 +245,7 @@ export class BusinessController {
         success: true,
         message: 'Staff member removed successfully',
       });
-    } catch (error: any) {
+    } catch (error: unknown) {
       logger.error('Remove staff error:', error);
       return res.status(500).json({
         success: false,
