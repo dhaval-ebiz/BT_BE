@@ -253,7 +253,7 @@ export class MerchantService {
     businessId: string,
     merchantId: string,
     userId: string,
-    input: any // MerchantPaymentInput
+    input: MerchantPaymentInput
   ) {
     const { amount, method, referenceNumber, notes } = input;
 
