@@ -1,11 +1,18 @@
-import { Request, Response } from 'express';
+import { Response } from 'express';
 import { BillApprovalService } from '../services/bill-approval.service';
 import { logger } from '../utils/logger';
 import { z } from 'zod';
+import { AuthenticatedRequest } from '../types/common';
+import { getErrorMessage } from '../utils/errors';
 
 const billApprovalService = new BillApprovalService();
 
 // Validation schemas
+const pathParamsSchema = z.object({
+  businessId: z.string().uuid(),
+  billId: z.string().uuid().optional(),
+});
+
 const submitApprovalSchema = z.object({
   requiresApproval: z.boolean().optional(),
 });
@@ -20,15 +27,30 @@ const bulkApprovalSchema = z.object({
   notes: z.string().optional(),
 });
 
+const workflowConfigSchema = z.object({
+  enabled: z.boolean().optional(),
+  thresholdAmount: z.number().optional(),
+  autoApproveBelowThreshold: z.boolean().optional(),
+});
+
 export class BillApprovalController {
   /**
    * Submit a bill for approval
    */
-  async submitForApproval(req: Request, res: Response) {
+  async submitForApproval(req: AuthenticatedRequest, res: Response): Promise<void> {
     try {
-      const { businessId, billId } = req.params;
+      const { businessId, billId } = pathParamsSchema.parse(req.params);
       const { requiresApproval = true } = submitApprovalSchema.parse(req.body);
-      const userId = req.user!.id;
+      
+      if (!req.user) {
+        res.status(401).json({ success: false, message: 'Authentication required' });
+        return;
+      }
+      if (!billId) {
+        res.status(400).json({ success: false, message: 'Bill ID is required' });
+        return;
+      }
+      const userId = req.user.id;
 
       const updatedBill = await billApprovalService.submitBillForApproval(
         businessId,
@@ -48,7 +70,7 @@ export class BillApprovalController {
       res.status(400).json({
         success: false,
         message: 'Failed to submit bill for approval',
-        error: error instanceof Error ? error.message : 'Unknown error',
+        error: getErrorMessage(error),
       });
     }
   }
@@ -56,11 +78,20 @@ export class BillApprovalController {
   /**
    * Approve or reject a bill
    */
-  async processApproval(req: Request, res: Response) {
+  async processApproval(req: AuthenticatedRequest, res: Response): Promise<void> {
     try {
-      const { businessId, billId } = req.params;
+      const { businessId, billId } = pathParamsSchema.parse(req.params);
       const { action, notes } = processApprovalSchema.parse(req.body);
-      const userId = req.user!.id;
+      
+      if (!req.user) {
+        res.status(401).json({ success: false, message: 'Authentication required' });
+        return;
+      }
+      if (!billId) {
+        res.status(400).json({ success: false, message: 'Bill ID is required' });
+        return;
+      }
+      const userId = req.user.id;
 
       const updatedBill = await billApprovalService.processApproval(
         businessId,
@@ -81,7 +112,7 @@ export class BillApprovalController {
       res.status(400).json({
         success: false,
         message: 'Failed to process bill approval',
-        error: error instanceof Error ? error.message : 'Unknown error',
+        error: getErrorMessage(error),
       });
     }
   }
@@ -89,9 +120,9 @@ export class BillApprovalController {
   /**
    * Get bills pending approval
    */
-  async getBillsPendingApproval(req: Request, res: Response) {
+  async getBillsPendingApproval(req: AuthenticatedRequest, res: Response): Promise<void> {
     try {
-      const { businessId } = req.params;
+      const { businessId } = pathParamsSchema.parse(req.params);
       const limit = parseInt(req.query.limit as string) || 50;
       const offset = parseInt(req.query.offset as string) || 0;
 
@@ -116,7 +147,7 @@ export class BillApprovalController {
       res.status(500).json({
         success: false,
         message: 'Failed to get bills pending approval',
-        error: error instanceof Error ? error.message : 'Unknown error',
+        error: getErrorMessage(error),
       });
     }
   }
@@ -124,9 +155,14 @@ export class BillApprovalController {
   /**
    * Get bill approval history
    */
-  async getBillApprovalHistory(req: Request, res: Response) {
+  async getBillApprovalHistory(req: AuthenticatedRequest, res: Response): Promise<void> {
     try {
-      const { businessId, billId } = req.params;
+      const { businessId, billId } = pathParamsSchema.parse(req.params);
+      
+      if (!billId) {
+        res.status(400).json({ success: false, message: 'Bill ID is required' });
+        return;
+      }
 
       const history = await billApprovalService.getBillApprovalHistory(businessId, billId);
 
@@ -140,7 +176,7 @@ export class BillApprovalController {
       res.status(500).json({
         success: false,
         message: 'Failed to get bill approval history',
-        error: error instanceof Error ? error.message : 'Unknown error',
+        error: getErrorMessage(error),
       });
     }
   }
@@ -148,11 +184,16 @@ export class BillApprovalController {
   /**
    * Bulk approve bills
    */
-  async bulkApproveBills(req: Request, res: Response) {
+  async bulkApproveBills(req: AuthenticatedRequest, res: Response): Promise<void> {
     try {
-      const { businessId } = req.params;
+      const { businessId } = pathParamsSchema.parse(req.params);
       const { billIds, notes } = bulkApprovalSchema.parse(req.body);
-      const userId = req.user!.id;
+      
+      if (!req.user) {
+        res.status(401).json({ success: false, message: 'Authentication required' });
+        return;
+      }
+      const userId = req.user.id;
 
       const results = await billApprovalService.bulkApproveBills(
         businessId,
@@ -180,7 +221,7 @@ export class BillApprovalController {
       res.status(400).json({
         success: false,
         message: 'Failed to process bulk approval',
-        error: error instanceof Error ? error.message : 'Unknown error',
+        error: getErrorMessage(error),
       });
     }
   }
@@ -188,10 +229,10 @@ export class BillApprovalController {
   /**
    * Configure approval workflow for business
    */
-  async configureApprovalWorkflow(req: Request, res: Response) {
+  async configureApprovalWorkflow(req: AuthenticatedRequest, res: Response): Promise<void> {
     try {
-      const { businessId } = req.params;
-      const { enabled, thresholdAmount, autoApproveBelowThreshold } = req.body;
+      const { businessId } = pathParamsSchema.parse(req.params);
+      const { enabled, thresholdAmount, autoApproveBelowThreshold } = workflowConfigSchema.parse(req.body);
 
       const config = await billApprovalService.configureApprovalWorkflow(
         businessId,
@@ -211,7 +252,7 @@ export class BillApprovalController {
       res.status(500).json({
         success: false,
         message: 'Failed to configure approval workflow',
-        error: error instanceof Error ? error.message : 'Unknown error',
+        error: getErrorMessage(error),
       });
     }
   }

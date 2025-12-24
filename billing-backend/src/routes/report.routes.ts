@@ -11,39 +11,39 @@ router.use(authenticateToken, authorizeBusinessAccess);
 // Sales Reports
 router.get(
   '/sales',
-  authorizePermission('REPORTS_READ'),
+  authorizePermission('REPORTS', 'READ'),
   reportController.getSalesReport
 );
 
 router.get(
   '/sales/top-products',
-  authorizePermission('REPORTS_READ'),
+  authorizePermission('REPORTS', 'READ'),
   reportController.getTopSellingProducts
 );
 
 // Inventory Reports
 router.get(
   '/inventory/valuation',
-  authorizePermission('INVENTORY_READ'),
+  authorizePermission('INVENTORY', 'READ'),
   reportController.getInventoryValuation
 );
 
 router.get(
   '/inventory/low-stock',
-  authorizePermission('INVENTORY_READ'),
+  authorizePermission('INVENTORY', 'READ'),
   reportController.getLowStockAlerts
 );
 
 // Financial Reports
 router.get(
   '/profit-loss',
-  authorizePermission('REPORTS_READ'), 
+  authorizePermission('REPORTS', 'READ'), 
   reportController.getProfitLoss
 );
 
 router.get(
   '/tax',
-  authorizePermission('REPORTS_READ'),
+  authorizePermission('REPORTS', 'READ'),
   reportController.getTaxReport
 );
 

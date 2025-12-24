@@ -26,7 +26,7 @@ export class AuthService {
   private readonly JWT_REFRESH_SECRET = process.env.JWT_REFRESH_SECRET || 'refresh-secret';
   private readonly JWT_REFRESH_EXPIRES_IN = '7d';
 
-  async register(input: RegisterInput) {
+  async register(input: RegisterInput): Promise<{ user: { id: string; email: string; firstName: string | null; lastName: string | null; role: string; status: string }; business: typeof retailBusinesses.$inferSelect; tokens: TokenPair }> {
     const { email, password, firstName, lastName, phone, businessName, businessType } = input;
 
     // Check if user exists
@@ -56,6 +56,8 @@ export class AuthService {
       })
       .returning();
 
+    if (!newUser) throw new Error('Failed to create user');
+
     // Create business
     const businessNameStr = businessName || 'My Business';
     const validBusinessType = businessType && 
@@ -74,6 +76,8 @@ export class AuthService {
       })
       .returning();
 
+    if (!newBusiness) throw new Error('Failed to create business');
+
     // Add user as staff (Owner role)
     // Note: In real app, we should fetch role ID for 'Owner' or 'Admin'
     await db.insert(businessStaff).values({
@@ -84,8 +88,12 @@ export class AuthService {
       joinedAt: new Date(),
     });
 
+    if (!newBusiness) throw new Error('Failed to create business');
+
     // Send verification email
-    await this.sendVerificationEmail(email, newUser.emailVerificationToken!);
+    if (newUser.emailVerificationToken) {
+        await this.sendVerificationEmail(email, newUser.emailVerificationToken);
+    }
 
     logAuthEvent('user_registered', newUser.id, { businessId: newBusiness.id });
 
@@ -106,7 +114,7 @@ export class AuthService {
     };
   }
 
-  async login(input: LoginInput) {
+  async login(input: LoginInput): Promise<{ user: { id: string; email: string; firstName: string | null; lastName: string | null; role: string; status: string }; tokens: TokenPair } | { require2FA: boolean; userId: string }> {
     const { email, password, code } = input;
 
     // Find user by email
@@ -162,9 +170,13 @@ export class AuthService {
         };
       }
 
+      if (!user.twoFactorSecret) {
+        throw new Error('2FA secret not found');
+      }
+
       const isValid = authenticator.verify({
         token: code,
-        secret: user.twoFactorSecret!,
+        secret: user.twoFactorSecret,
       });
 
       if (!isValid) {
@@ -201,7 +213,7 @@ export class AuthService {
     };
   }
 
-  async refreshTokens(input: RefreshTokenInput) {
+  async refreshTokens(input: RefreshTokenInput): Promise<{ tokens: TokenPair }> {
     const { refreshToken } = input;
 
     try {
@@ -247,7 +259,7 @@ export class AuthService {
     }
   }
 
-  async logout(userId: string) {
+  async logout(userId: string): Promise<{ message: string }> {
     // Invalidate all active sessions for user
     await db
       .update(userSessions)
@@ -262,7 +274,7 @@ export class AuthService {
     return { message: 'Logged out successfully' };
   }
 
-  async forgotPassword(input: ForgotPasswordInput) {
+  async forgotPassword(input: ForgotPasswordInput): Promise<{ message: string }> {
     const { email } = input;
 
     const [user] = await db
@@ -297,7 +309,7 @@ export class AuthService {
   }
 
 
-  async resetPassword(input: ResetPasswordInput) {
+  async resetPassword(input: ResetPasswordInput): Promise<{ message: string }> {
     const { token, password } = input;
 
     const [user] = await db
@@ -309,7 +321,7 @@ export class AuthService {
       ))
       .limit(1);
 
-    if (!user || user.passwordResetExpiresAt! < new Date()) {
+    if (!user || !user.passwordResetExpiresAt || user.passwordResetExpiresAt < new Date()) {
       throw new Error('Invalid or expired reset token');
     }
 
@@ -330,7 +342,7 @@ export class AuthService {
     return { message: 'Password reset successful' };
   }
 
-  async changePassword(userId: string, input: ChangePasswordInput) {
+  async changePassword(userId: string, input: ChangePasswordInput): Promise<{ message: string }> {
     const { currentPassword, newPassword } = input;
 
     const [user] = await db
@@ -364,7 +376,7 @@ export class AuthService {
     return { message: 'Password changed successfully' };
   }
 
-  async updateProfile(userId: string, input: UpdateProfileInput) {
+  async updateProfile(userId: string, input: UpdateProfileInput): Promise<{ user: { id: string; email: string; firstName: string | null; lastName: string | null; phone: string | null; avatar: string | null; role: string } }> {
     const updateData: {
       firstName?: string;
       lastName?: string;
@@ -383,6 +395,8 @@ export class AuthService {
       .where(eq(users.id, userId))
       .returning();
 
+    if (!updatedUser) throw new Error('Failed to update user');
+
     logAuthEvent('profile_updated', userId);
 
     return {
@@ -398,7 +412,7 @@ export class AuthService {
     };
   }
 
-  async verifyEmail(token: string) {
+  async verifyEmail(token: string): Promise<{ message: string }> {
     const [user] = await db
       .select()
       .from(users)
@@ -423,7 +437,7 @@ export class AuthService {
     return { message: 'Email verified successfully' };
   }
 
-  async resendVerificationEmail(email: string) {
+  async resendVerificationEmail(email: string): Promise<{ message: string }> {
     const [user] = await db
       .select()
       .from(users)
@@ -450,7 +464,7 @@ export class AuthService {
     return { message: 'If an unverified account exists with this email, you will receive a verification link.' };
   }
 
-  async verifyPhone(token: string) {
+  async verifyPhone(token: string): Promise<{ message: string }> {
     const [user] = await db
       .select()
       .from(users)
@@ -474,7 +488,7 @@ export class AuthService {
     return { message: 'Phone verified successfully' };
   }
 
-  async enable2FA(userId: string) {
+  async enable2FA(userId: string): Promise<{ secret: string; qrCode: string }> {
     const secret = authenticator.generateSecret();
     const otpauth = authenticator.keyuri(userId, 'BillingApp', secret);
     const qrCode = await toDataURL(otpauth);
@@ -491,7 +505,7 @@ export class AuthService {
     };
   }
 
-  async verify2FA(userId: string, input: Verify2FAInput) {
+  async verify2FA(userId: string, input: Verify2FAInput): Promise<{ message: string }> {
     const { token, secret } = input;
 
     const [user] = await db
@@ -533,7 +547,7 @@ export class AuthService {
     return { message: '2FA enabled successfully' };
   }
 
-  async disable2FA(userId: string, token: string) {
+  async disable2FA(userId: string, token: string): Promise<{ message: string }> {
     const [user] = await db
       .select()
       .from(users)
@@ -599,7 +613,7 @@ export class AuthService {
     };
   }
 
-  private async sendVerificationEmail(email: string, token: string) {
+  private async sendVerificationEmail(email: string, token: string): Promise<void> {
     const verificationUrl = process.env.FRONTEND_URL + '/verify-email?token=' + token;
     
     await sendEmail({
@@ -614,7 +628,7 @@ export class AuthService {
     });
   }
 
-  private async sendPasswordResetEmail(email: string, token: string) {
+  private async sendPasswordResetEmail(email: string, token: string): Promise<void> {
     const resetUrl = process.env.FRONTEND_URL + '/reset-password?token=' + token;
     
     await sendEmail({

@@ -20,7 +20,7 @@ export const errorHandler = (
   req: Request,
   res: Response,
   _next: NextFunction
-) => {
+): void => {
   const error = { ...err };
   error.message = err.message;
 
@@ -99,12 +99,12 @@ export const errorHandler = (
 };
 
 // Async error handler wrapper
-export const asyncHandler = (fn: RequestHandler) => (req: Request, res: Response, next: NextFunction) => {
+export const asyncHandler = (fn: RequestHandler) => (req: Request, res: Response, next: NextFunction): void => {
   Promise.resolve(fn(req, res, next)).catch(next);
 };
 
 // Database error handler
-export const handleDatabaseError = (error: DatabaseError) => {
+export const handleDatabaseError = (error: DatabaseError): { statusCode: number; message: string } => {
   if (error.code === 'P2002') {
     return {
       statusCode: 409,
@@ -133,21 +133,21 @@ export const handleDatabaseError = (error: DatabaseError) => {
 };
 
 // Validation error handler
-export const handleValidationError = (error: { errors: Record<string, ValidationErrorType> }) => {
+export const handleValidationError = (error: { errors: Record<string, ValidationErrorType> }): { statusCode: number; message: string; errors: { field: string; message: string }[] } => {
   const errors = Object.values(error.errors).map((err) => ({
-    field: err.path,
+    field: err.path || 'unknown',
     message: err.message,
   }));
 
   return {
     statusCode: 400,
-    message: 'Validation failed',
-    errors,
+    message: 'Validation failed'
+    ,errors,
   };
 };
 
 // JWT error handler
-export const handleJWTError = (error: JWTError) => {
+export const handleJWTError = (error: JWTError): { statusCode: number; message: string } => {
   if (error.name === 'TokenExpiredError') {
     return {
       statusCode: 401,
@@ -169,7 +169,7 @@ export const handleJWTError = (error: JWTError) => {
 };
 
 // Rate limit error handler
-export const handleRateLimitError = () => {
+export const handleRateLimitError = (): { statusCode: number; message: string } => {
   return {
     statusCode: 429,
     message: 'Too many requests, please try again later',
@@ -177,7 +177,7 @@ export const handleRateLimitError = () => {
 };
 
 // Multer error handler
-export const handleMulterError = (error: MulterError) => {
+export const handleMulterError = (error: MulterError): { statusCode: number; message: string } => {
   if (error.code === 'LIMIT_FILE_SIZE') {
     return {
       statusCode: 400,

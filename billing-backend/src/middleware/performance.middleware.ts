@@ -14,7 +14,7 @@ interface RequestWithQueryCount extends Request {
   queryCount?: number;
 }
 
-export function performanceMonitor(req: Request, res: Response, next: NextFunction) {
+export function performanceMonitor(req: Request, res: Response, next: NextFunction): void {
   const startTime = Date.now();
   const startMemory = process.memoryUsage();
 
@@ -38,11 +38,11 @@ export function performanceMonitor(req: Request, res: Response, next: NextFuncti
 
     // Update performance metrics in Redis
     const key = `performance:${new Date().toISOString().split('T')[0]}`;
-    const field = `${req.method}:${req.route?.path || req.path}`;
+    const field = `${req.method}:${(req.route as { path: string } | undefined)?.path || req.path}`;
     
     try {
       const metrics = await redis.hget(key, field);
-      const currentMetrics: PerformanceMetrics = metrics ? JSON.parse(metrics) : {
+      const currentMetrics: PerformanceMetrics = metrics ? (JSON.parse(metrics) as PerformanceMetrics) : {
         requests: 0,
         totalResponseTime: 0,
         errors: 0,
@@ -68,7 +68,7 @@ export function performanceMonitor(req: Request, res: Response, next: NextFuncti
   next();
 }
 
-export function apiMetrics(req: Request, res: Response, next: NextFunction) {
+export function apiMetrics(req: Request, res: Response, next: NextFunction): void {
   const startTime = process.hrtime.bigint();
 
   res.on('finish', () => {
@@ -77,7 +77,7 @@ export function apiMetrics(req: Request, res: Response, next: NextFunction) {
     // Log API metrics
     logger.info('API Metrics', {
       method: req.method,
-      route: req.route?.path || req.path,
+      route: (req.route as { path: string } | undefined)?.path || req.path,
       statusCode: res.statusCode,
       duration: `${duration.toFixed(2)}ms`,
       userAgent: req.get('User-Agent'),
@@ -101,7 +101,7 @@ export function databaseMetrics(req: Request, res: Response, next: NextFunction)
     if (queryCount > 0) {
       logger.info('Database Metrics', {
         method: req.method,
-        route: req.route?.path || req.path,
+        route: (req.route as { path: string } | undefined)?.path || req.path,
         queryCount,
         queriesPerSecond: queriesPerSecond.toFixed(2),
         duration: `${duration}ms`,
@@ -112,7 +112,7 @@ export function databaseMetrics(req: Request, res: Response, next: NextFunction)
   next();
 }
 
-export function cacheMetrics(req: Request, res: Response, next: NextFunction) {
+export function cacheMetrics(req: Request, res: Response, next: NextFunction): void {
   const startTime = Date.now();
   let cacheHits = 0;
   let cacheMisses = 0;
@@ -137,7 +137,7 @@ export function cacheMetrics(req: Request, res: Response, next: NextFunction) {
     if (totalCacheOps > 0) {
       logger.info('Cache Metrics', {
         method: req.method,
-        route: req.route?.path || req.path,
+        route: (req.route as { path: string } | undefined)?.path || req.path,
         cacheHits,
         cacheMisses,
         hitRate: `${hitRate.toFixed(2)}%`,
@@ -149,21 +149,28 @@ export function cacheMetrics(req: Request, res: Response, next: NextFunction) {
   next();
 }
 
-export function compressionMetrics(req: Request, res: Response, next: NextFunction) {
+export function compressionMetrics(req: Request, res: Response, next: NextFunction): void {
   const originalWrite = res.write;
   const originalEnd = res.end;
   let responseSize = 0;
 
-  res.write = (chunk: Buffer | string): boolean => {
+  res.write = (chunk: unknown, encodingOrCb?: BufferEncoding | ((error?: Error | null) => void), cb?: (error?: Error | null) => void): boolean => {
     if (chunk) {
-      responseSize += Buffer.isBuffer(chunk) ? chunk.length : Buffer.byteLength(chunk);
+      const buffer = Buffer.isBuffer(chunk) ? chunk : Buffer.from(String(chunk));
+      responseSize += buffer.length;
     }
-    return originalWrite.call(res, chunk) as boolean;
+    
+    // Handle overload resolution manually for the call
+    if (typeof encodingOrCb === 'function') {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      return originalWrite.call(res, chunk, encodingOrCb as any);
+    }
+    return originalWrite.call(res, chunk, encodingOrCb as BufferEncoding, cb);
   };
 
-  res.end = (chunk?: Buffer | string): Response => {
+  res.end = (chunk?: unknown, encodingOrCb?: BufferEncoding | ((error?: Error | null) => void), cb?: (error?: Error | null) => void): Response => {
     if (chunk) {
-      responseSize += Buffer.isBuffer(chunk) ? chunk.length : Buffer.byteLength(chunk);
+      responseSize += Buffer.isBuffer(chunk) ? chunk.length : Buffer.byteLength(String(chunk));
     }
 
     const compressionRatio = req.headers['accept-encoding']?.includes('gzip') ? 0.3 : 1;
@@ -173,7 +180,7 @@ export function compressionMetrics(req: Request, res: Response, next: NextFuncti
     if (responseSize > 1024) {
       logger.info('Compression Metrics', {
         method: req.method,
-        route: req.route?.path || req.path,
+        route: (req.route as { path: string } | undefined)?.path || req.path,
         compressedSize: `${(responseSize / 1024).toFixed(2)}KB`,
         estimatedOriginalSize: `${(estimatedOriginalSize / 1024).toFixed(2)}KB`,
         savedBytes: `${(savedBytes / 1024).toFixed(2)}KB`,
@@ -181,13 +188,17 @@ export function compressionMetrics(req: Request, res: Response, next: NextFuncti
       });
     }
 
-    return originalEnd.call(res, chunk) as Response;
+    if (typeof encodingOrCb === 'function') {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      return originalEnd.call(res, chunk, encodingOrCb as any);
+    }
+    return originalEnd.call(res, chunk, encodingOrCb as BufferEncoding, cb);
   };
 
   next();
 }
 
-export function securityMetrics(req: Request, res: Response, next: NextFunction) {
+export function securityMetrics(req: Request, res: Response, next: NextFunction): void {
   const securityHeaders = [
     'x-frame-options',
     'x-content-type-options',
@@ -204,7 +215,7 @@ export function securityMetrics(req: Request, res: Response, next: NextFunction)
     if (missingHeaders.length > 0) {
       logger.warn('Missing security headers', {
         method: req.method,
-        route: req.route?.path || req.path,
+        route: (req.route as { path: string } | undefined)?.path || req.path,
         missingHeaders,
       });
     }

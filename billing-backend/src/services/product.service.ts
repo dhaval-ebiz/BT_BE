@@ -1,6 +1,6 @@
 import { db } from '../config/database';
 import { products, productCategories, billItems, bills, productVariants, productUnitEnum, billingStatusEnum } from '../models/drizzle/schema';
-import { eq, and, sql, desc, sum, count, gte, lte, SQL, isNull } from 'drizzle-orm';
+import { eq, and, sql, desc, sum, count, gte, lte, SQL, isNull, AnyColumn } from 'drizzle-orm';
 import { 
   CreateProductInput, 
   UpdateProductInput, 
@@ -10,6 +10,8 @@ import {
 import { logger } from '../utils/logger';
 import { AuditService } from './audit.service';
 import { AuthenticatedRequest } from '../types/common';
+import { redis } from '../config/redis';
+import crypto from 'crypto';
 
 type ProductUnit = typeof productUnitEnum.enumValues[number];
 type BillingStatus = typeof billingStatusEnum.enumValues[number];
@@ -17,7 +19,23 @@ type BillingStatus = typeof billingStatusEnum.enumValues[number];
 const auditService = new AuditService();
 
 export class ProductService {
-  async createCategory(businessId: string, name: string, description?: string, parentId?: string) {
+  private async getProductVersion(businessId: string): Promise<string> {
+    const key = `business:${businessId}:products:version`;
+    let version = await redis.get(key);
+    if (!version) {
+      version = Date.now().toString();
+      await redis.set(key, version, 'EX', 7 * 24 * 60 * 60); // 7 days
+    }
+    return version;
+  }
+
+  private async incrementProductVersion(businessId: string): Promise<void> {
+    const key = `business:${businessId}:products:version`;
+    const version = Date.now().toString();
+    await redis.set(key, version, 'EX', 7 * 24 * 60 * 60);
+  }
+
+  async createCategory(businessId: string, name: string, description?: string, parentId?: string): Promise<typeof productCategories.$inferSelect> {
     // Check if parent category exists
     if (parentId) {
       const [parentCategory] = await db
@@ -48,12 +66,19 @@ export class ProductService {
       })
       .returning();
 
+    if (!category) {
+      throw new Error('Failed to create category');
+    }
+
+    // Invalidate product cache as categories might change list views or filters
+    await this.incrementProductVersion(businessId);
+    
     logger.info('Product category created', { categoryId: category.id, businessId, name });
 
     return category;
   }
 
-  async updateCategory(businessId: string, categoryId: string, name?: string, description?: string, parentId?: string, isActive?: boolean) {
+  async updateCategory(businessId: string, categoryId: string, name?: string, description?: string, parentId?: string, isActive?: boolean): Promise<typeof productCategories.$inferSelect> {
     const updateData: {
       name?: string;
       slug?: string;
@@ -83,12 +108,14 @@ export class ProductService {
       throw new Error('Category not found');
     }
 
+    await this.incrementProductVersion(businessId);
+
     logger.info('Product category updated', { categoryId, businessId });
 
     return updatedCategory;
   }
 
-  async deleteCategory(businessId: string, categoryId: string) {
+  async deleteCategory(businessId: string, categoryId: string): Promise<{ message: string }> {
     // Check if category has products
     const categoryProducts = await db
       .select()
@@ -129,12 +156,18 @@ export class ProductService {
       throw new Error('Category not found');
     }
 
+    await this.incrementProductVersion(businessId);
+
     logger.info('Product category deleted', { categoryId, businessId });
 
     return { message: 'Category deleted successfully' };
   }
 
-  async getCategories(businessId: string, parentId?: string) {
+  async getCategories(businessId: string, parentId?: string): Promise<Array<typeof productCategories.$inferSelect & { children: unknown[] }>> {
+    // Basic caching for categories (typically low volume/change)
+    // For now, relying on DB as volume is usually low (<100)
+    // Can implement caching later if needed
+    
     const conditions: SQL[] = [
       eq(productCategories.businessId, businessId),
       eq(productCategories.isActive, true)
@@ -166,7 +199,188 @@ export class ProductService {
     return categoriesWithChildren;
   }
 
-  async createProduct(businessId: string, userId: string, input: CreateProductInput, req?: AuthenticatedRequest) {
+  // ==================== VARIANT MANAGEMENT ====================
+
+  async getVariants(businessId: string, productId: string): Promise<Array<typeof productVariants.$inferSelect>> {
+    // Verify product belongs to business
+    const [product] = await db
+      .select()
+      .from(products)
+      .where(and(
+        eq(products.id, productId),
+        eq(products.businessId, businessId)
+      ))
+      .limit(1);
+
+    if (!product) {
+      throw new Error('Product not found');
+    }
+
+    const variants = await db
+      .select()
+      .from(productVariants)
+      .where(eq(productVariants.productId, productId))
+      .orderBy(productVariants.createdAt);
+
+    return variants;
+  }
+
+  async createVariant(businessId: string, productId: string, variantData: {
+    variantName: string;
+    attributes: Record<string, string>;
+    sku?: string;
+    barcode?: string;
+    priceAdjustment?: number;
+    purchasePrice?: number;
+    sellingPrice?: number;
+    mrp?: number;
+    stockQuantity?: number;
+    minimumStock?: number;
+    weight?: number;
+    isDefault?: boolean;
+  }): Promise<typeof productVariants.$inferSelect> {
+    // Verify product belongs to business and has variants enabled
+    const [product] = await db
+      .select()
+      .from(products)
+      .where(and(
+        eq(products.id, productId),
+        eq(products.businessId, businessId)
+      ))
+      .limit(1);
+
+    if (!product) {
+      throw new Error('Product not found');
+    }
+
+    if (!product.hasVariants) {
+      throw new Error('Product does not support variants');
+    }
+
+    const [variant] = await db
+      .insert(productVariants)
+      .values({
+        productId,
+        variantName: variantData.variantName,
+        attributes: variantData.attributes,
+        sku: variantData.sku,
+        barcode: variantData.barcode,
+        priceAdjustment: (variantData.priceAdjustment || 0).toString(),
+        purchasePrice: variantData.purchasePrice?.toString(),
+        sellingPrice: variantData.sellingPrice?.toString(),
+        mrp: variantData.mrp?.toString(),
+        stockQuantity: (variantData.stockQuantity || 0).toString(),
+        minimumStock: variantData.minimumStock?.toString(),
+        weight: variantData.weight?.toString(),
+        isDefault: variantData.isDefault || false,
+      })
+      .returning();
+
+    if (!variant) {
+      throw new Error('Failed to create variant');
+    }
+
+    await this.incrementProductVersion(businessId);
+    logger.info('Product variant created', { variantId: variant.id, productId, businessId });
+
+    return variant;
+  }
+
+  async updateVariant(businessId: string, productId: string, variantId: string, variantData: {
+    variantName?: string;
+    attributes?: Record<string, string>;
+    sku?: string;
+    barcode?: string;
+    priceAdjustment?: number;
+    purchasePrice?: number;
+    sellingPrice?: number;
+    mrp?: number;
+    stockQuantity?: number;
+    minimumStock?: number;
+    weight?: number;
+    isDefault?: boolean;
+  }): Promise<typeof productVariants.$inferSelect> {
+    // Verify product belongs to business
+    const [product] = await db
+      .select()
+      .from(products)
+      .where(and(
+        eq(products.id, productId),
+        eq(products.businessId, businessId)
+      ))
+      .limit(1);
+
+    if (!product) {
+      throw new Error('Product not found');
+    }
+
+    const updateData: Record<string, unknown> = {};
+    if (variantData.variantName !== undefined) updateData.variantName = variantData.variantName;
+    if (variantData.attributes !== undefined) updateData.attributes = variantData.attributes;
+    if (variantData.sku !== undefined) updateData.sku = variantData.sku;
+    if (variantData.barcode !== undefined) updateData.barcode = variantData.barcode;
+    if (variantData.priceAdjustment !== undefined) updateData.priceAdjustment = variantData.priceAdjustment.toString();
+    if (variantData.purchasePrice !== undefined) updateData.purchasePrice = variantData.purchasePrice?.toString();
+    if (variantData.sellingPrice !== undefined) updateData.sellingPrice = variantData.sellingPrice?.toString();
+    if (variantData.mrp !== undefined) updateData.mrp = variantData.mrp?.toString();
+    if (variantData.stockQuantity !== undefined) updateData.stockQuantity = variantData.stockQuantity.toString();
+    if (variantData.minimumStock !== undefined) updateData.minimumStock = variantData.minimumStock?.toString();
+    if (variantData.weight !== undefined) updateData.weight = variantData.weight?.toString();
+    if (variantData.isDefault !== undefined) updateData.isDefault = variantData.isDefault;
+
+    const [updatedVariant] = await db
+      .update(productVariants)
+      .set(updateData)
+      .where(and(
+        eq(productVariants.id, variantId),
+        eq(productVariants.productId, productId)
+      ))
+      .returning();
+
+    if (!updatedVariant) {
+      throw new Error('Variant not found');
+    }
+
+    await this.incrementProductVersion(businessId);
+    logger.info('Product variant updated', { variantId, productId, businessId });
+
+    return updatedVariant;
+  }
+
+  async deleteVariant(businessId: string, productId: string, variantId: string): Promise<{ message: string }> {
+    // Verify product belongs to business
+    const [product] = await db
+      .select()
+      .from(products)
+      .where(and(
+        eq(products.id, productId),
+        eq(products.businessId, businessId)
+      ))
+      .limit(1);
+
+    if (!product) {
+      throw new Error('Product not found');
+    }
+
+    const [deletedVariant] = await db
+      .delete(productVariants)
+      .where(and(
+        eq(productVariants.id, variantId),
+        eq(productVariants.productId, productId)
+      ))
+      .returning();
+
+    if (!deletedVariant) {
+      throw new Error('Variant not found');
+    }
+
+    await this.incrementProductVersion(businessId);
+    logger.info('Product variant deleted', { variantId, productId, businessId });
+
+    return { message: 'Variant deleted successfully' };
+  }
+
+  async createProduct(businessId: string, userId: string, input: CreateProductInput, req?: AuthenticatedRequest): Promise<typeof products.$inferSelect> {
     const {
       productCode,
       name,
@@ -184,7 +398,9 @@ export class ProductService {
       sku,
       hsnCode,
       weight,
+      // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
       dimensions,
+      // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
       specifications,
       isTaxable,
       hasVariants,
@@ -252,6 +468,10 @@ export class ProductService {
       })
       .returning();
 
+    if (!product) {
+      throw new Error('Failed to create product');
+    }
+
     // Create variants if provided
     if (hasVariants && variants && variants.length > 0) {
       await Promise.all(variants.map(async (variant) => {
@@ -277,10 +497,13 @@ export class ProductService {
     await auditService.logProductAction('CREATE', businessId, userId, product.id, undefined, product, req);
     logger.info('Product created', { productId: product.id, businessId, productCode });
 
+    // Invalidate cache
+    await this.incrementProductVersion(businessId);
+
     return product;
   }
 
-  async getProduct(businessId: string, productId: string) {
+  async getProduct(businessId: string, productId: string): Promise<typeof products.$inferSelect> {
     const [product] = await db
       .select()
       .from(products)
@@ -297,7 +520,7 @@ export class ProductService {
     return product;
   }
 
-  async updateProduct(businessId: string, userId: string, productId: string, input: UpdateProductInput, req?: AuthenticatedRequest) {
+  async updateProduct(businessId: string, userId: string, productId: string, input: UpdateProductInput, req?: AuthenticatedRequest): Promise<typeof products.$inferSelect> {
     const updateData: {
       productCode?: string;
       name?: string;
@@ -373,10 +596,13 @@ export class ProductService {
     await auditService.logProductAction('UPDATE', businessId, userId, productId, oldProduct, updatedProduct, req);
     logger.info('Product updated', { productId, businessId });
 
+    // Invalidate cache
+    await this.incrementProductVersion(businessId);
+
     return updatedProduct;
   }
 
-  async deleteProduct(businessId: string, userId: string, productId: string, req?: AuthenticatedRequest) {
+  async deleteProduct(businessId: string, userId: string, productId: string, req?: AuthenticatedRequest): Promise<{ message: string }> {
     // Check if product is used in any bills
     const productBills = await db
       .select()
@@ -405,10 +631,24 @@ export class ProductService {
     await auditService.logProductAction('DELETE', businessId, userId, productId, productToDelete, undefined, req);
     logger.info('Product deleted', { productId, businessId });
 
+    // Invalidate cache
+    await this.incrementProductVersion(businessId);
+
     return { message: 'Product deleted successfully' };
   }
 
-  async getProducts(businessId: string, query: ProductQueryInput) {
+  async getProducts(businessId: string, query: ProductQueryInput): Promise<{ products: typeof products.$inferSelect[]; pagination: { page: number; limit: number; total: number; totalPages: number } }> {
+    // 1. Check Cache
+    const version = await this.getProductVersion(businessId);
+    // Create a stable cache key based on query params
+    const queryHash = crypto.createHash('md5').update(JSON.stringify(query)).digest('hex');
+    const cacheKey = `business:${businessId}:products:v${version}:${queryHash}`;
+    
+    const cachedResult = await redis.get(cacheKey);
+    if (cachedResult) {
+      return JSON.parse(cachedResult) as { products: typeof products.$inferSelect[]; pagination: { page: number; limit: number; total: number; totalPages: number } };
+    }
+
     const { 
       search, 
       categoryId, 
@@ -453,7 +693,10 @@ export class ProductService {
     const whereCondition = and(...conditions);
 
     // Apply sorting
-    const sortColumn = products[sortBy as keyof typeof products];
+    const validSortColumns = ['name', 'price', 'createdAt', 'updatedAt', 'currentStock'];
+    const sortField = validSortColumns.includes(sortBy || '') ? sortBy : 'createdAt';
+    const sortColumn = products[sortField as keyof typeof products] as unknown as AnyColumn;
+    
     let orderByClause;
     if (sortColumn) {
       orderByClause = sortOrder === 'desc' ? desc(sortColumn) : sortColumn;
@@ -467,7 +710,7 @@ export class ProductService {
       .from(products)
       .where(whereCondition);
 
-    const total = countResult.count;
+    const total = countResult?.count ? Number(countResult.count) : 0;
     const totalPages = Math.ceil(total / limit);
 
     // Apply pagination
@@ -477,11 +720,12 @@ export class ProductService {
       .select()
       .from(products)
       .where(whereCondition)
-      .orderBy(orderByClause)
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      .orderBy(orderByClause as any)
       .limit(limit)
       .offset(offset);
 
-    return {
+    const result = {
       products: productsData,
       pagination: {
         page,
@@ -490,9 +734,15 @@ export class ProductService {
         totalPages,
       },
     };
+
+    // 2. Set Cache (Expire after 1 hour, or until invalidated)
+    // The version key expiration handles long-term cleanup, but good to have explicit TTL
+    await redis.set(cacheKey, JSON.stringify(result), 'EX', 3600);
+
+    return result;
   }
 
-  async adjustStock(businessId: string, userId: string, input: StockAdjustmentInput, req?: AuthenticatedRequest) {
+  async adjustStock(businessId: string, userId: string, input: StockAdjustmentInput, req?: AuthenticatedRequest): Promise<{ product: typeof products.$inferSelect; adjustment: unknown }> {
     const { productId, adjustmentType, quantity, reason, notes } = input;
 
     if (!productId) {
@@ -556,6 +806,13 @@ export class ProductService {
         req
     );
 
+    if (!updatedProduct) {
+      throw new Error('Failed to update product stock: Product not found');
+    }
+
+    // Invalidate cache
+    await this.incrementProductVersion(businessId);
+
     return {
       product: updatedProduct,
       adjustment: {
@@ -572,7 +829,7 @@ export class ProductService {
     };
   }
 
-  async getLowStockProducts(businessId: string) {
+  async getLowStockProducts(businessId: string): Promise<typeof products.$inferSelect[]> {
     const lowStockProducts = await db
       .select()
       .from(products)
@@ -587,7 +844,9 @@ export class ProductService {
     return lowStockProducts;
   }
 
-  async getProductStats(businessId: string) {
+  async getProductStats(businessId: string): Promise<{ totalProducts: number; activeProducts: number; lowStockProducts: number; outOfStockProducts: number }> {
+    // These stats are calculated on demand, often for dashboards. 
+    // They can also be cached, but for now we'll focus on the main list.
     const [totalProducts] = await db
       .select({ count: count() })
       .from(products)
@@ -621,14 +880,14 @@ export class ProductService {
       ));
 
     return {
-      totalProducts: totalProducts.count,
-      activeProducts: activeProducts.count,
-      lowStockProducts: lowStockProducts.count,
-      outOfStockProducts: outOfStockProducts.count,
+      totalProducts: totalProducts?.count ? Number(totalProducts.count) : 0,
+      activeProducts: activeProducts?.count ? Number(activeProducts.count) : 0,
+      lowStockProducts: lowStockProducts?.count ? Number(lowStockProducts.count) : 0,
+      outOfStockProducts: outOfStockProducts?.count ? Number(outOfStockProducts.count) : 0,
     };
   }
 
-  async getProductSalesReport(businessId: string, startDate?: Date, endDate?: Date) {
+  async getProductSalesReport(businessId: string, startDate?: Date, endDate?: Date): Promise<unknown[]> {
     const conditions: SQL[] = [
       eq(bills.businessId, businessId),
       eq(bills.status, 'PAID' as BillingStatus)

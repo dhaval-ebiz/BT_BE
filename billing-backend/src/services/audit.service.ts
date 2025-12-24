@@ -18,7 +18,7 @@ export interface AuditLogData {
 }
 
 export class AuditService {
-  async logAction(data: AuditLogData) {
+  async logAction(data: AuditLogData): Promise<void> {
     try {
       await db.insert(auditLogs).values({
         businessId: data.businessId,
@@ -50,7 +50,7 @@ export class AuditService {
     endDate?: Date,
     page: number = 1,
     limit: number = 50
-  ) {
+  ): Promise<{ logs: typeof auditLogs.$inferSelect[]; pagination: { page: number; limit: number; total: number; totalPages: number } }> {
     const conditions = [];
 
     if (businessId) conditions.push(eq(auditLogs.businessId, businessId));
@@ -96,7 +96,7 @@ export class AuditService {
     entityType: string,
     entityId: string,
     businessId?: string
-  ) {
+  ): Promise<typeof auditLogs.$inferSelect[]> {
     const conditions = [
       eq(auditLogs.entityType, entityType),
       eq(auditLogs.entityId, entityId)
@@ -120,7 +120,7 @@ export class AuditService {
     businessId?: string,
     page: number = 1,
     limit: number = 50
-  ) {
+  ): Promise<{ logs: typeof auditLogs.$inferSelect[]; pagination: { page: number; limit: number; total: number; totalPages: number } }> {
     const conditions = [eq(auditLogs.userId, userId)];
 
     if (businessId) {
@@ -167,7 +167,7 @@ export class AuditService {
     oldValues?: Record<string, unknown>,
     newValues?: Record<string, unknown>,
     req?: AuthenticatedRequest
-  ) {
+  ): Promise<void> {
     await this.logAction({
       businessId,
       userId,
@@ -190,7 +190,7 @@ export class AuditService {
     newValues?: Record<string, unknown>,
     notes?: string,
     req?: AuthenticatedRequest
-  ) {
+  ): Promise<void> {
     await this.logAction({
       businessId,
       userId,
@@ -212,7 +212,7 @@ export class AuditService {
     oldValues?: Record<string, unknown>,
     newValues?: Record<string, unknown>,
     req?: AuthenticatedRequest
-  ) {
+  ): Promise<void> {
      await this.logAction({
       businessId,
       userId,
@@ -234,7 +234,7 @@ export class AuditService {
     oldValues?: Record<string, unknown>,
     newValues?: Record<string, unknown>,
     req?: AuthenticatedRequest
-  ) {
+  ): Promise<void> {
     await this.logAction({
       businessId,
       userId,
@@ -256,7 +256,7 @@ export class AuditService {
     oldValues?: Record<string, unknown>,
     newValues?: Record<string, unknown>,
     req?: AuthenticatedRequest
-  ) {
+  ): Promise<void> {
     await this.logAction({
       businessId,
       userId,
@@ -274,7 +274,7 @@ export class AuditService {
     action: 'LOGIN' | 'LOGOUT' | 'PASSWORD_CHANGE' | 'PASSWORD_RESET' | 'ACCOUNT_LOCKED',
     userId: string,
     req?: AuthenticatedRequest
-  ) {
+  ): Promise<void> {
     await this.logAction({
       userId,
       action,
@@ -291,7 +291,7 @@ export class AuditService {
     prompt: string,
     result?: Record<string, unknown>,
     req?: AuthenticatedRequest
-  ) {
+  ): Promise<void> {
     await this.logAction({
       businessId,
       userId,
@@ -310,8 +310,9 @@ export class AuditService {
     userId: string,
     fileName: string,
     fileType: string,
+    metadata?: Record<string, unknown>,
     req?: AuthenticatedRequest
-  ) {
+  ): Promise<void> {
     await this.logAction({
       businessId,
       userId,
@@ -319,6 +320,7 @@ export class AuditService {
       entityType: 'FILE',
       entityId: fileName,
       newValues: { fileType },
+      metadata,
       ipAddress: req?.ip,
       userAgent: req?.get('User-Agent'),
     });
@@ -330,7 +332,7 @@ export class AuditService {
     userId?: string,
     details?: Record<string, unknown>,
     req?: AuthenticatedRequest
-  ) {
+  ): Promise<void> {
     await this.logAction({
       businessId,
       userId,

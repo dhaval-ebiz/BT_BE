@@ -2,12 +2,10 @@
 
 
 import { logger } from '../utils/logger';
-import { AuditService } from './audit.service';
-import { PermissionService } from './permission.service';
 import { z } from 'zod';
 
-const auditService = new AuditService();
-const permissionService = new PermissionService();
+// const auditService = new AuditService();
+// const permissionService = new PermissionService();
 
 // Validation schemas
 const depositMoneySchema = z.object({
@@ -38,10 +36,10 @@ export class MoneyManagementService {
    * Deposit money to customer account
    */
   async depositMoney(
-    businessId: string,
-    userId: string,
-    data: z.infer<typeof depositMoneySchema>
-  ) {
+    _businessId: string,
+    _userId: string,
+    _data: z.infer<typeof depositMoneySchema>
+  ): Promise<unknown> {
     try {
       /*
       // Check permission
@@ -127,7 +125,7 @@ export class MoneyManagementService {
       */
       throw new Error("Feature disabled due to missing schema");
     } catch (error) {
-      logger.error('Error depositing money', { error, businessId, userId, data });
+      logger.error('Error depositing money', { error, businessId: _businessId, userId: _userId, data: _data });
       throw error;
     }
   }
@@ -136,10 +134,10 @@ export class MoneyManagementService {
    * Withdraw money from customer account
    */
   async withdrawMoney(
-    businessId: string,
-    userId: string,
-    data: z.infer<typeof withdrawMoneySchema>
-  ) {
+    _businessId: string,
+    _userId: string,
+    _data: z.infer<typeof withdrawMoneySchema>
+  ): Promise<unknown> {
     try {
       /*
       // Check permission
@@ -147,7 +145,7 @@ export class MoneyManagementService {
       */
       throw new Error("Feature disabled");
     } catch (error) {
-      logger.error('Error withdrawing money', { error, businessId, userId, data });
+      logger.error('Error withdrawing money', { error, businessId: _businessId, userId: _userId, data: _data });
       throw error;
     }
   }
@@ -156,17 +154,17 @@ export class MoneyManagementService {
    * Transfer money between customer accounts
    */
   async transferMoney(
-    businessId: string,
-    userId: string,
-    data: z.infer<typeof transferMoneySchema>
-  ) {
+    _businessId: string,
+    _userId: string,
+    _data: z.infer<typeof transferMoneySchema>
+  ): Promise<unknown> {
     try {
       /*
       // ... code
       */
       throw new Error("Feature disabled");
     } catch (error) {
-      logger.error('Error transferring money', { error, businessId, userId, data });
+      logger.error('Error transferring money', { error, businessId: _businessId, userId: _userId, data: _data });
       throw error;
     }
   }
@@ -176,13 +174,13 @@ export class MoneyManagementService {
    */
   async getCustomerMoneyHistory(
     businessId: string,
-    userId: string,
+    _userId: string,
     customerId: string,
-    limit: number = 50,
-    offset: number = 0,
-    startDate?: Date,
-    endDate?: Date
-  ) {
+    _limit: number = 50,
+    _offset: number = 0,
+    _startDate?: Date,
+    _endDate?: Date
+  ): Promise<unknown> {
     try {
       /*
       // Check permission
@@ -302,7 +300,7 @@ export class MoneyManagementService {
   /**
    * Get business money summary
    */
-  async getBusinessMoneySummary(businessId: string, userId: string) {
+  async getBusinessMoneySummary(businessId: string, _userId: string): Promise<unknown> {
     try {
       /*
       // ... code

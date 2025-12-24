@@ -18,15 +18,18 @@ const auditService = new AuditService();
 export class MoneyService {
   
   // ================= CATEGORIES =================
-  async createCategory(businessId: string, input: CreateExpenseCategoryInput) {
+  async createCategory(businessId: string, input: CreateExpenseCategoryInput): Promise<typeof expenseCategories.$inferSelect> {
     const [category] = await db.insert(expenseCategories).values({
       businessId,
       ...input,
     }).returning();
+    
+    if (!category) throw new Error('Failed to create category');
+
     return category;
   }
 
-  async listCategories(businessId: string, type?: 'EXPENSE' | 'INCOME') {
+  async listCategories(businessId: string, type?: 'EXPENSE' | 'INCOME'): Promise<typeof expenseCategories.$inferSelect[]> {
     const conditions: SQL[] = [eq(expenseCategories.businessId, businessId)];
     if (type) {
         conditions.push(eq(expenseCategories.type, type));
@@ -36,7 +39,7 @@ export class MoneyService {
   }
 
   // ================= EXPENSES =================
-  async createExpense(businessId: string, userId: string, input: CreateExpenseInput, req?: AuthenticatedRequest) {
+  async createExpense(businessId: string, userId: string, input: CreateExpenseInput, req?: AuthenticatedRequest): Promise<typeof expenses.$inferSelect> {
     const { date, ...rest } = input;
     
     const [expense] = await db.insert(expenses).values({
@@ -49,11 +52,13 @@ export class MoneyService {
         linkedUserId: input.linkedUserId
     }).returning();
 
-    await auditService.logBusinessAction('EXPENSE_CREATE', businessId, userId, JSON.stringify({ expenseId: expense.id, amount: input.amount }), req);
+    if (!expense) throw new Error('Failed to create expense');
+
+    await auditService.logBusinessAction('EXPENSE_CREATE', businessId, userId, expense.id, undefined, { amount: input.amount }, req);
     return expense;
   }
 
-  async listExpenses(businessId: string, query: ExpenseQueryInput) {
+  async listExpenses(businessId: string, query: ExpenseQueryInput): Promise<{ expenses: Array<{ id: string; amount: string; date: Date; description: string | null; vendor: string | null; category: string | null; paymentMethod: string | null; status: string | null }>; pagination: { total: number; page: number; limit: number; totalPages: number } }> {
     const { categoryId, startDate, endDate, vendor, minAmount, maxAmount, page = 1, limit = 20 } = query;
     
     const conditions: SQL[] = [eq(expenses.businessId, businessId)];
@@ -70,7 +75,7 @@ export class MoneyService {
     const offset = (page - 1) * limit;
 
     const [totalRes] = await db.select({ count: sql<number>`count(*)` }).from(expenses).where(condition);
-    const total = Number(totalRes.count);
+    const total = Number(totalRes?.count || 0);
     const totalPages = Math.ceil(total / limit);
 
     const data = await db.select({
@@ -94,7 +99,7 @@ export class MoneyService {
   }
 
   // ================= SUMMARY =================
-  async getFinancialSummary(businessId: string, startDate?: string, endDate?: string) {
+  async getFinancialSummary(businessId: string, startDate?: string, endDate?: string): Promise<{ totalIncome: number; totalExpense: number; netIncome: number; period: { start: Date; end: Date } }> {
     const start = startDate ? new Date(startDate) : new Date(0); // Beginning of time
     const end = endDate ? new Date(endDate) : new Date();
 

@@ -5,6 +5,14 @@ const WHATSAPP_API_KEY = process.env.WHATSAPP_API_KEY;
 const WHATSAPP_PHONE_NUMBER_ID = process.env.WHATSAPP_PHONE_NUMBER_ID;
 const WHATSAPP_API_URL = 'https://graph.facebook.com/v18.0';
 
+interface WhatsAppMessageResponse {
+  messages?: Array<{ id: string }>;
+}
+
+interface WhatsAppProfileResponse {
+  display_name?: string;
+}
+
 export async function sendWhatsAppMessage(to: string, message: string): Promise<void> {
   try {
     if (!WHATSAPP_API_KEY || !WHATSAPP_PHONE_NUMBER_ID) {
@@ -17,7 +25,7 @@ export async function sendWhatsAppMessage(to: string, message: string): Promise<
       throw new Error('Invalid WhatsApp phone number format');
     }
 
-    const response = await axios.post(
+    const response = await axios.post<WhatsAppMessageResponse>(
       `${WHATSAPP_API_URL}/${WHATSAPP_PHONE_NUMBER_ID}/messages`,
       {
         messaging_product: 'whatsapp',
@@ -71,7 +79,7 @@ export async function sendWhatsAppTemplate(
       ],
     }));
 
-    const response = await axios.post(
+    const response = await axios.post<WhatsAppMessageResponse>(
       `${WHATSAPP_API_URL}/${WHATSAPP_PHONE_NUMBER_ID}/messages`,
       {
         messaging_product: 'whatsapp',
@@ -120,7 +128,7 @@ export async function sendWhatsAppMedia(
       throw new Error('Invalid WhatsApp phone number format');
     }
 
-    const response = await axios.post(
+    const response = await axios.post<WhatsAppMessageResponse>(
       `${WHATSAPP_API_URL}/${WHATSAPP_PHONE_NUMBER_ID}/messages`,
       {
         messaging_product: 'whatsapp',
@@ -183,7 +191,7 @@ export async function testWhatsAppConnection(): Promise<boolean> {
     }
     
     // Try to fetch phone number info to verify connection
-    const response = await axios.get(
+    const response = await axios.get<WhatsAppProfileResponse>(
       `${WHATSAPP_API_URL}/${WHATSAPP_PHONE_NUMBER_ID}`,
       {
         headers: {
@@ -218,7 +226,7 @@ export async function getWhatsAppTemplates(): Promise<unknown> {
       }
     );
 
-    return response.data;
+    return response.data as unknown;
   } catch (error) {
     logger.error('Failed to fetch WhatsApp templates', { error });
     throw error;

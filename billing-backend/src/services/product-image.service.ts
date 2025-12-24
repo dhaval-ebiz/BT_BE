@@ -17,7 +17,7 @@ export class ProductImageService {
     file: Express.Multer.File,
     imageType: 'MAIN' | 'GALLERY' = 'GALLERY',
     isPrimary: boolean = false
-  ) {
+  ): Promise<{ image: typeof productImages.$inferSelect; remainingImages: number }> {
     try {
       // Check image upload limit
       const rateLimit = await apiAbuseService.checkImageUploadLimit(businessId);
@@ -89,6 +89,10 @@ export class ProductImageService {
         { productId, imageType, isPrimary }
       );
 
+      if (!imageRecord) {
+        throw new Error('Failed to create image record');
+      }
+
       logger.info('Product image uploaded', {
         businessId,
         productId,
@@ -111,7 +115,7 @@ export class ProductImageService {
     businessId: string,
     productId: string,
     imageType?: 'MAIN' | 'GALLERY' | 'QR_CODE'
-  ) {
+  ): Promise<typeof productImages.$inferSelect[]> {
     try {
       // Verify product belongs to business
       const [product] = await db
@@ -148,7 +152,7 @@ export class ProductImageService {
     businessId: string,
     userId: string,
     imageId: string
-  ) {
+  ): Promise<{ message: string }> {
     try {
       // Get image record
       const [image] = await db
@@ -160,6 +164,8 @@ export class ProductImageService {
       if (!image) {
         throw new Error('Image not found');
       }
+
+      if (!image.productId) throw new Error('Image is orphaned (no product ID)');
 
       // Verify product belongs to business
       const [product] = await db
@@ -203,9 +209,9 @@ export class ProductImageService {
 
   async setPrimaryImage(
     businessId: string,
-    userId: string,
+    _userId: string,
     imageId: string
-  ) {
+  ): Promise<typeof productImages.$inferSelect> {
     try {
       // Get image record
       const [image] = await db
@@ -217,6 +223,8 @@ export class ProductImageService {
       if (!image) {
         throw new Error('Image not found');
       }
+
+      if (!image.productId) throw new Error('Image is orphaned (no product ID)');
 
       // Verify product belongs to business
       const [product] = await db
@@ -232,6 +240,8 @@ export class ProductImageService {
         throw new Error('Access denied: Product not found');
       }
 
+      if (!image.productId) throw new Error('Image is orphaned (no product ID)');
+
       // Unset all other primary images for this product
       await db
         .update(productImages)
@@ -244,6 +254,10 @@ export class ProductImageService {
         .set({ isPrimary: true })
         .where(eq(productImages.id, imageId))
         .returning();
+
+      if (!updatedImage) {
+        throw new Error('Failed to update image');
+      }
 
       logger.info('Primary image set', { businessId, imageId, productId: product.id });
 
@@ -260,7 +274,7 @@ export class ProductImageService {
     productId: string,
     files: Express.Multer.File[],
     imageType: 'MAIN' | 'GALLERY' = 'GALLERY'
-  ) {
+  ): Promise<{ images: typeof productImages.$inferSelect[]; uploadedCount: number; remainingImages: number }> {
     try {
       // Check rate limit for all images
       const rateLimit = await apiAbuseService.checkImageUploadLimit(businessId);

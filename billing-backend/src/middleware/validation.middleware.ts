@@ -86,7 +86,7 @@ export function validateParams<T>(schema: ZodSchema<T>) {
 
 export function handleValidationError(error: unknown, res: Response): void {
   if (error instanceof z.ZodError) {
-    return res.status(400).json({
+    res.status(400).json({
       success: false,
       message: 'Validation failed',
       errors: error.errors.map(err => ({
@@ -94,10 +94,11 @@ export function handleValidationError(error: unknown, res: Response): void {
         message: err.message,
       })),
     });
+    return;
   }
   
   logger.error('Validation error:', error);
-  return res.status(500).json({
+  res.status(500).json({
     success: false,
     message: 'Validation failed',
   });

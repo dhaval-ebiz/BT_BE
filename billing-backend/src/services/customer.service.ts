@@ -10,12 +10,16 @@ import {
 } from '../schemas/customer.schema';
 import { logger } from '../utils/logger';
 import { sendWelcomeMessage } from '../utils/notifications';
+import { AuditService } from './audit.service';
+import { AuthenticatedRequest } from '../types/common';
+
+const auditService = new AuditService();
 
 type PaymentMethod = typeof paymentMethodEnum.enumValues[number];
 type BillingStatus = typeof billingStatusEnum.enumValues[number];
 
 export class CustomerService {
-  async createCustomer(businessId: string, input: CreateCustomerInput) {
+  async createCustomer(businessId: string, userId: string, input: CreateCustomerInput, req?: AuthenticatedRequest): Promise<typeof customers.$inferSelect> {
     const {
       customerCode,
       firstName,
@@ -62,17 +66,21 @@ export class CustomerService {
         alternatePhone,
         billingAddress,
         shippingAddress,
-        creditLimit: creditLimit || 0,
+        creditLimit: creditLimit?.toString() || '0',
         creditDays: creditDays || 0,
         isCreditAllowed: isCreditAllowed || false,
-        outstandingBalance: 0,
-        totalPurchases: 0,
-        totalPayments: 0,
+        outstandingBalance: '0',
+        totalPurchases: '0',
+        totalPayments: '0',
         notes,
         tags: tags || [],
         isActive: true,
       })
       .returning();
+
+    if (!customer) {
+      throw new Error('Failed to create customer');
+    }
 
     // Send welcome message if phone or email is provided
     if (phone) {
@@ -91,12 +99,13 @@ export class CustomerService {
       }
     }
 
+    await auditService.logCustomerAction('CREATE', businessId, userId, customer.id, undefined, customer, req);
     logger.info('Customer created', { customerId: customer.id, businessId, customerCode: finalCustomerCode });
 
     return customer;
   }
 
-  async getCustomer(businessId: string, customerId: string) {
+  async getCustomer(businessId: string, customerId: string): Promise<typeof customers.$inferSelect> {
     const [customer] = await db
       .select()
       .from(customers)
@@ -113,7 +122,7 @@ export class CustomerService {
     return customer;
   }
 
-  async updateCustomer(businessId: string, customerId: string, input: UpdateCustomerInput) {
+  async updateCustomer(businessId: string, userId: string, customerId: string, input: UpdateCustomerInput, req?: AuthenticatedRequest): Promise<typeof customers.$inferSelect> {
     const updateData: {
       firstName?: string;
       lastName?: string;
@@ -145,6 +154,20 @@ export class CustomerService {
     if (input.tags !== undefined) updateData.tags = input.tags;
     if (input.isActive !== undefined) updateData.isActive = input.isActive;
 
+    // Get old data for audit
+    const [oldCustomer] = await db
+        .select()
+        .from(customers)
+        .where(and(
+          eq(customers.id, customerId),
+          eq(customers.businessId, businessId)
+        ))
+        .limit(1);
+
+    if (!oldCustomer) {
+        throw new Error('Customer not found');
+    }
+
     const [updatedCustomer] = await db
       .update(customers)
       .set(updateData)
@@ -158,12 +181,13 @@ export class CustomerService {
       throw new Error('Customer not found');
     }
 
+    await auditService.logCustomerAction('UPDATE', businessId, userId, customerId, oldCustomer, updatedCustomer, req);
     logger.info('Customer updated', { customerId, businessId });
 
     return updatedCustomer;
   }
 
-  async deleteCustomer(businessId: string, customerId: string) {
+  async deleteCustomer(businessId: string, userId: string, customerId: string, req?: AuthenticatedRequest): Promise<{ message: string }> {
     // Check if customer has any bills
     const customerBills = await db
       .select()
@@ -178,6 +202,8 @@ export class CustomerService {
       throw new Error('Cannot delete customer with existing bills');
     }
 
+    const [customerToDelete] = await db.select().from(customers).where(eq(customers.id, customerId)).limit(1);
+
     const [deletedCustomer] = await db
       .delete(customers)
       .where(and(
@@ -190,12 +216,13 @@ export class CustomerService {
       throw new Error('Customer not found');
     }
 
+    await auditService.logCustomerAction('DELETE', businessId, userId, customerId, customerToDelete, undefined, req);
     logger.info('Customer deleted', { customerId, businessId });
 
     return { message: 'Customer deleted successfully' };
   }
 
-  async getCustomers(businessId: string, query: CustomerQueryInput) {
+  async getCustomers(businessId: string, query: CustomerQueryInput): Promise<{ customers: typeof customers.$inferSelect[]; pagination: { page: number; limit: number; total: number; totalPages: number } }> {
     const { 
       search, 
       isActive, 
@@ -239,13 +266,16 @@ export class CustomerService {
     const whereCondition = and(...conditions);
 
     // Apply sorting
-    const sortColumn = customers[sortBy as keyof typeof customers];
-    let orderByClause;
-    if (sortColumn) {
-      orderByClause = sortOrder === 'desc' ? desc(sortColumn) : sortColumn;
-    } else {
-      orderByClause = desc(customers.createdAt);
-    }
+    const SORT_COLUMNS = {
+      createdAt: customers.createdAt,
+      updatedAt: customers.updatedAt,
+      name: customers.firstName,
+      phone: customers.phone,
+      email: customers.email,
+    };
+    
+    const sortColumn = SORT_COLUMNS[sortBy as keyof typeof SORT_COLUMNS] || customers.createdAt;
+    const orderByClause = sortOrder === 'desc' ? desc(sortColumn) : sortColumn;
 
     // Get total count
     const [countResult] = await db
@@ -253,7 +283,7 @@ export class CustomerService {
       .from(customers)
       .where(whereCondition);
 
-    const total = countResult.count;
+    const total = countResult?.count || 0;
     const totalPages = Math.ceil(total / limit);
 
     // Apply pagination
@@ -283,7 +313,7 @@ export class CustomerService {
     customerId: string,
     userId: string,
     input: CustomerPaymentInput
-  ) {
+  ): Promise<typeof payments.$inferSelect> {
     const { amount, method, referenceNumber, notes, billIds } = input;
 
     // Validate customer
@@ -309,10 +339,10 @@ export class CustomerService {
       .values({
         businessId,
         customerId,
-        billId: billIds && billIds.length > 0 ? billIds[0] : null,
+        // billId removed as it does not exist in payments table
         paymentNumber,
         paymentDate: new Date(),
-        amount,
+        amount: String(amount),
         method: method as PaymentMethod,
         status: 'COMPLETED',
         referenceNumber,
@@ -320,6 +350,10 @@ export class CustomerService {
         createdBy: userId,
       })
       .returning();
+
+    if (!payment) {
+      throw new Error('Failed to create payment');
+    }
 
     // Update customer balance
     await db
@@ -344,8 +378,8 @@ export class CustomerService {
           .limit(1);
 
         if (bill) {
-          const newPaidAmount = bill.paidAmount + amount;
-          const newBalanceAmount = bill.totalAmount - newPaidAmount;
+          const newPaidAmount = Number(bill.paidAmount) + amount;
+          const newBalanceAmount = Number(bill.totalAmount) - newPaidAmount;
           let newStatus: BillingStatus = bill.status as BillingStatus;
 
           if (newBalanceAmount <= 0) {
@@ -371,7 +405,7 @@ export class CustomerService {
     return payment;
   }
 
-  async getCustomerStatement(businessId: string, customerId: string, input: CustomerStatementInput) {
+  async getCustomerStatement(businessId: string, customerId: string, input: CustomerStatementInput): Promise<{ customer: typeof customers.$inferSelect; openingBalance: number; transactions: unknown[]; closingBalance: number; period: { startDate: Date | null; endDate: Date | null } }> {
     const { startDate, endDate } = input;
 
     // Get customer details
@@ -438,7 +472,7 @@ export class CustomerService {
           sql`${payments.paymentDate} < ${new Date(startDate)}`
         ));
 
-      openingBalance = (openingBills.total || 0) - (openingPayments.total || 0);
+      openingBalance = Number(openingBills?.total || 0) - Number(openingPayments?.total || 0);
     }
 
     // Combine and sort transactions
@@ -447,7 +481,7 @@ export class CustomerService {
         date: bill.billDate,
         type: 'BILL' as const,
         description: `Bill ${bill.billNumber}`,
-        debit: bill.totalAmount,
+        debit: Number(bill.totalAmount),
         credit: 0,
         balance: 0, // Will be calculated
       })),
@@ -456,7 +490,7 @@ export class CustomerService {
         type: 'PAYMENT' as const,
         description: `Payment ${payment.paymentNumber}`,
         debit: 0,
-        credit: payment.amount,
+        credit: Number(payment.amount),
         balance: 0, // Will be calculated
       })),
     ].sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
@@ -464,7 +498,7 @@ export class CustomerService {
     // Calculate running balance
     let runningBalance = openingBalance;
     for (const transaction of transactions) {
-      runningBalance += transaction.debit - transaction.credit;
+      runningBalance += Number(transaction.debit) - Number(transaction.credit);
       transaction.balance = runningBalance;
     }
 
@@ -480,7 +514,7 @@ export class CustomerService {
     };
   }
 
-  async getCustomerStats(businessId: string) {
+  async getCustomerStats(businessId: string): Promise<{ totalCustomers: number; activeCustomers: number; customersWithOutstanding: number; totalOutstanding: number | string }> {
     const [totalCustomers] = await db
       .select({ count: count() })
       .from(customers)
@@ -508,10 +542,85 @@ export class CustomerService {
       .where(eq(customers.businessId, businessId));
 
     return {
-      totalCustomers: totalCustomers.count,
-      activeCustomers: activeCustomers.count,
-      customersWithOutstanding: customersWithOutstanding.count,
-      totalOutstanding: totalOutstanding.total || 0,
+      totalCustomers: totalCustomers?.count || 0,
+      activeCustomers: activeCustomers?.count || 0,
+      customersWithOutstanding: customersWithOutstanding?.count || 0,
+      totalOutstanding: Number(totalOutstanding?.total || 0),
+    };
+  }
+
+  async getIndividualCustomerStats(businessId: string, customerId: string): Promise<{
+    totalPurchases: number;
+    totalSpent: number;
+    averageOrderValue: number;
+    lastPurchaseDate: Date | null;
+    outstandingBalance: number;
+    billCount: number;
+    paidBillCount: number;
+    pendingBillCount: number;
+  }> {
+    // Verify customer belongs to business
+    const [customer] = await db
+      .select()
+      .from(customers)
+      .where(and(
+        eq(customers.id, customerId),
+        eq(customers.businessId, businessId)
+      ))
+      .limit(1);
+
+    if (!customer) {
+      throw new Error('Customer not found');
+    }
+
+    // Get bill statistics
+    const billStats = await db
+      .select({
+        totalBills: count(),
+        totalAmount: sum(bills.totalAmount),
+        lastBillDate: sql<Date>`MAX(${bills.billDate})`,
+      })
+      .from(bills)
+      .where(and(
+        eq(bills.customerId, customerId),
+        eq(bills.businessId, businessId)
+      ));
+
+    // Get paid bills count
+    const [paidBills] = await db
+      .select({ count: count() })
+      .from(bills)
+      .where(and(
+        eq(bills.customerId, customerId),
+        eq(bills.businessId, businessId),
+        eq(bills.status, 'PAID' as BillingStatus)
+      ));
+
+    // Get pending bills count (PENDING + PARTIAL)
+    const [pendingBills] = await db
+      .select({ count: count() })
+      .from(bills)
+      .where(and(
+        eq(bills.customerId, customerId),
+        eq(bills.businessId, businessId),
+        sql`${bills.status} IN ('PENDING', 'PARTIAL')`
+      ));
+
+    const billCount = billStats[0]?.totalBills || 0;
+    const totalSpent = Number(billStats[0]?.totalAmount || 0);
+    const averageOrderValue = billCount > 0 ? totalSpent / billCount : 0;
+    const lastPurchaseDate = billStats[0]?.lastBillDate || null;
+    const outstandingBalance = Number(customer.outstandingBalance || 0);
+
+    return {
+      totalPurchases: billCount,
+      totalSpent,
+      averageOrderValue: Math.round(averageOrderValue * 100) / 100,
+      lastPurchaseDate,
+      outstandingBalance,
+      billCount,
+      paidBillCount: paidBills?.count || 0,
+      pendingBillCount: pendingBills?.count || 0,
     };
   }
 

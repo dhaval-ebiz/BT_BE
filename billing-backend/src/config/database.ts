@@ -11,7 +11,7 @@ const pool = new Pool({
 
 export const db = drizzle(pool, { schema });
 
-export async function testConnection() {
+export async function testConnection(): Promise<void> {
   try {
     await pool.query('SELECT NOW()');
     console.log('✅ Database connected successfully');
@@ -21,6 +21,6 @@ export async function testConnection() {
   }
 }
 
-export async function closeConnection() {
+export async function closeConnection(): Promise<void> {
   await pool.end();
 }

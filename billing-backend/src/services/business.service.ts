@@ -24,7 +24,7 @@ const PERMISSION_MAPPING: Record<string, keyof typeof businessStaff.$inferInsert
 };
 
 export class BusinessService {
-  async createBusiness(ownerId: string, input: CreateBusinessInput) {
+  async createBusiness(ownerId: string, input: CreateBusinessInput): Promise<typeof retailBusinesses.$inferSelect> {
     const { 
       name, 
       description, 
@@ -65,12 +65,16 @@ export class BusinessService {
       })
       .returning();
 
+    if (!business) {
+      throw new Error('Failed to create business');
+    }
+
     logger.info('Business created', { businessId: business.id, ownerId });
 
     return business;
   }
 
-  async getBusiness(businessId: string) {
+  async getBusiness(businessId: string): Promise<typeof retailBusinesses.$inferSelect> {
     const [business] = await db
       .select()
       .from(retailBusinesses)
@@ -84,7 +88,7 @@ export class BusinessService {
     return business;
   }
 
-  async updateBusiness(businessId: string, input: UpdateBusinessInput) {
+  async updateBusiness(businessId: string, input: UpdateBusinessInput): Promise<typeof retailBusinesses.$inferSelect> {
     const updateData: Partial<typeof retailBusinesses.$inferInsert> = {};
 
     if (input.name !== undefined) updateData.name = input.name;
@@ -119,7 +123,7 @@ export class BusinessService {
     return updatedBusiness;
   }
 
-  async getBusinessSettings(businessId: string) {
+  async getBusinessSettings(businessId: string): Promise<{ settings: unknown; billingSettings: unknown; paymentSettings: unknown; notificationSettings: unknown; analyticsSettings: unknown }> {
     const [business] = await db
       .select({
         settings: retailBusinesses.settings,
@@ -139,7 +143,7 @@ export class BusinessService {
     return business;
   }
 
-  async updateBusinessSettings(businessId: string, input: BusinessSettingsInput) {
+  async updateBusinessSettings(businessId: string, input: BusinessSettingsInput): Promise<{ settings: unknown; invoiceSettings: unknown; paymentSettings: unknown; notificationSettings: unknown; analyticsSettings: unknown }> {
     const updateData: Partial<typeof retailBusinesses.$inferInsert> = {};
 
     if (input.invoiceSettings) updateData.billingSettings = input.invoiceSettings;
@@ -175,6 +179,10 @@ export class BusinessService {
 
     logger.info('Business settings updated', { businessId });
     
+    if (!updatedBusiness) {
+      throw new Error('Failed to update business settings');
+    }
+
     return {
       settings: updatedBusiness.settings,
       invoiceSettings: updatedBusiness.billingSettings,
@@ -186,7 +194,7 @@ export class BusinessService {
 
   // Staff Management
 
-  async getBusinessStaff(businessId: string) {
+  async getBusinessStaff(businessId: string): Promise<unknown[]> {
     const staff = await db
       .select({
         id: businessStaff.id,
@@ -225,7 +233,7 @@ export class BusinessService {
     }));
   }
 
-  async inviteStaffMember(businessId: string, input: InviteStaffInput) {
+  async inviteStaffMember(businessId: string, input: InviteStaffInput): Promise<typeof businessStaff.$inferSelect> {
     const { email, role, permissions } = input;
 
     // Check if user exists
@@ -289,10 +297,14 @@ export class BusinessService {
 
     logger.info('Staff member invited', { businessId, userId: user.id, role });
 
+    if (!newStaff) {
+      throw new Error('Failed to invite staff member');
+    }
+
     return newStaff;
   }
 
-  async updateStaffMember(businessId: string, staffId: string, input: UpdateStaffInput) {
+  async updateStaffMember(businessId: string, staffId: string, input: UpdateStaffInput): Promise<typeof businessStaff.$inferSelect> {
     const updateData: Partial<typeof businessStaff.$inferInsert> = {};
 
     if (input.role !== undefined) {
@@ -331,7 +343,7 @@ export class BusinessService {
     return updatedStaff;
   }
 
-  async removeStaffMember(businessId: string, staffId: string) {
+  async removeStaffMember(businessId: string, staffId: string): Promise<{ message: string }> {
     const [deletedStaff] = await db
       .delete(businessStaff)
       .where(and(

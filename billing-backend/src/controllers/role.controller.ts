@@ -33,7 +33,7 @@ export class RoleController {
   /**
    * Create a new custom role
    */
-  async createRole(req: BusinessRequest, res: Response) {
+  async createRole(req: BusinessRequest, res: Response): Promise<Response | unknown> {
     try {
       const businessId = req.business?.id || req.user?.businessId;
       const user = req.user;
@@ -52,19 +52,19 @@ export class RoleController {
         input.permissions
       );
 
-      res.status(201).json(role);
+      return res.status(201).json(role);
     } catch (error) {
       if (error instanceof z.ZodError) {
         return res.status(400).json({ message: 'Validation error', errors: error.errors });
       }
-      res.status(500).json({ message: 'Error creating role', error: (error as Error).message });
+      return res.status(500).json({ message: 'Error creating role', error: (error as Error).message });
     }
   }
 
   /**
    * Get all roles for a business
    */
-  async getRoles(req: BusinessRequest, res: Response) {
+  async getRoles(req: BusinessRequest, res: Response): Promise<Response | unknown> {
     try {
       const businessId = req.business?.id || req.user?.businessId;
       if (!businessId) throw new Error('Business context required');
@@ -73,33 +73,39 @@ export class RoleController {
       }
 
       const roles = await roleService.getRoles(businessId);
-      res.json(roles);
+      return res.json(roles);
     } catch (error) {
-      res.status(500).json({ message: 'Error fetching roles', error: (error as Error).message });
+      return res.status(500).json({ message: 'Error fetching roles', error: (error as Error).message });
     }
   }
 
   /**
    * Get role details
    */
-  async getRoleDetails(req: BusinessRequest, res: Response) {
+  async getRoleDetails(req: BusinessRequest, res: Response): Promise<Response | unknown> {
     try {
       const { roleId } = req.params;
+      if (!roleId) {
+        return res.status(400).json({ message: 'Role ID is required' });
+      }
       const role = await roleService.getRoleDetails(roleId);
-      res.json(role);
+      return res.json(role);
     } catch (error) {
-      res.status(500).json({ message: 'Error fetching role details', error: (error as Error).message });
+      return res.status(500).json({ message: 'Error fetching role details', error: (error as Error).message });
     }
   }
 
   /**
    * Update a role
    */
-  async updateRole(req: BusinessRequest, res: Response) {
+  async updateRole(req: BusinessRequest, res: Response): Promise<Response | unknown> {
     try {
       const businessId = req.business?.id || req.user?.businessId;
       const user = req.user;
       const { roleId } = req.params;
+      if (!roleId) {
+        return res.status(400).json({ message: 'Role ID is required' });
+      }
       
       if (!businessId || !user) {
         return res.status(401).json({ message: 'Unauthorized' });
@@ -114,44 +120,47 @@ export class RoleController {
         input
       );
 
-      res.json(updatedRole);
+      return res.json(updatedRole);
     } catch (error) {
       if (error instanceof z.ZodError) {
         return res.status(400).json({ message: 'Validation error', errors: error.errors });
       }
-      res.status(500).json({ message: 'Error updating role', error: (error as Error).message });
+      return res.status(500).json({ message: 'Error updating role', error: (error as Error).message });
     }
   }
 
   /**
    * Delete a role
    */
-  async deleteRole(req: BusinessRequest, res: Response) {
+  async deleteRole(req: BusinessRequest, res: Response): Promise<Response | unknown> {
     try {
       const businessId = req.business?.id || req.user?.businessId;
       const user = req.user;
       const { roleId } = req.params;
+      if (!roleId) {
+        return res.status(400).json({ message: 'Role ID is required' });
+      }
 
       if (!businessId || !user) {
         return res.status(401).json({ message: 'Unauthorized' });
       }
 
       const result = await roleService.deleteRole(businessId, user.id, roleId);
-      res.json(result);
+      return res.json(result);
     } catch (error) {
-       res.status(500).json({ message: 'Error deleting role', error: (error as Error).message });
+       return res.status(500).json({ message: 'Error deleting role', error: (error as Error).message });
     }
   }
 
   /**
    * Get available permission definitions
    */
-  async getPermissionDefinitions(req: BusinessRequest, res: Response) {
+  async getPermissionDefinitions(_req: BusinessRequest, res: Response): Promise<Response | unknown> {
       try {
           const matrix = permissionService.getPermissionMatrix();
-          res.json(matrix);
+          return res.json(matrix);
       } catch (error) {
-          res.status(500).json({ message: 'Error fetching permissions', error: (error as Error).message });
+          return res.status(500).json({ message: 'Error fetching permissions', error: (error as Error).message });
       }
   }
 }

@@ -120,7 +120,7 @@ router.post('/:businessId/bills/:billId/submit', billApprovalController.submitFo
  *                   format: date-time
  */
 router.post('/:businessId/bills/:billId/process', 
-  authorizeRole(['RETAIL_OWNER', 'SUPER_ADMIN']), 
+  authorizeRole('RETAIL_OWNER', 'SUPER_ADMIN'), 
   billApprovalController.processApproval
 );
 
@@ -176,7 +176,7 @@ router.post('/:businessId/bills/:billId/process',
  *                   format: date-time
  */
 router.get('/:businessId/pending', 
-  authorizeRole(['RETAIL_OWNER', 'SUPER_ADMIN', 'MANAGER']), 
+  authorizeRole('RETAIL_OWNER', 'SUPER_ADMIN', 'MANAGER'), 
   billApprovalController.getBillsPendingApproval
 );
 
@@ -288,7 +288,7 @@ router.get('/:businessId/bills/:billId/history', billApprovalController.getBillA
  *                   format: date-time
  */
 router.post('/:businessId/bulk-approve', 
-  authorizeRole(['RETAIL_OWNER', 'SUPER_ADMIN']), 
+  authorizeRole('RETAIL_OWNER', 'SUPER_ADMIN'), 
   billApprovalController.bulkApproveBills
 );
 
@@ -343,7 +343,7 @@ router.post('/:businessId/bulk-approve',
  *                   format: date-time
  */
 router.post('/:businessId/configure', 
-  authorizeRole(['RETAIL_OWNER', 'SUPER_ADMIN']), 
+  authorizeRole('RETAIL_OWNER', 'SUPER_ADMIN'), 
   billApprovalController.configureApprovalWorkflow
 );
 

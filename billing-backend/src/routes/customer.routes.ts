@@ -91,6 +91,27 @@ router.get('/stats', authenticateToken, customerController.getCustomerStats);
 
 /**
  * @swagger
+ * /api/customers/{customerId}/stats:
+ *   get:
+ *     summary: Get individual customer statistics
+ *     tags: [Customers]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: customerId
+ *         required: true
+ *         schema:
+ *           type: string
+ *           format: uuid
+ *     responses:
+ *       200:
+ *         description: Customer statistics
+ */
+router.get('/:customerId/stats', authenticateToken, customerController.getIndividualCustomerStats);
+
+/**
+ * @swagger
  * /api/customers/{customerId}:
  *   get:
  *     summary: Get customer by ID

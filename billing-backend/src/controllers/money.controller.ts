@@ -1,67 +1,80 @@
 import { Response } from 'express';
-import { getErrorMessage } from '../utils/errors';
 import { BusinessRequest } from '../middleware/auth.middleware';
 import { MoneyService } from '../services/money.service';
 import { expenseCategorySchema, createExpenseSchema, expenseQuerySchema } from '../schemas/money.schema';
-import { logger } from '../utils/logger';
-import { logApiRequest } from '../utils/logger';
+import { logger, logApiRequest } from '../utils/logger';
+import { getErrorMessage } from '../utils/errors';
 
 const moneyService = new MoneyService();
 
 export class MoneyController {
   
-  async createCategory(req: BusinessRequest, res: Response) {
+  async createCategory(req: BusinessRequest, res: Response): Promise<void> {
     const startTime = Date.now();
     try {
-        if (!req.business) return res.status(401).json({ success: false });
+        if (!req.business) {
+          res.status(401).json({ success: false, message: 'Business authentication required' });
+          return;
+        }
 
         const validation = expenseCategorySchema.safeParse(req.body);
         if (!validation.success) {
-            return res.status(400).json({ success: false, errors: validation.error.errors });
+            res.status(400).json({ success: false, errors: validation.error.errors });
+            return;
         }
 
         const category = await moneyService.createCategory(req.business.id, validation.data);
         logApiRequest(req, res, Date.now() - startTime);
         res.status(201).json({ success: true, data: category });
-    } catch (error: unknown) {
+    } catch (error) {
         logger.error('Create category error:', error);
-        res.status(500).json({ success: false, message: error.message });
+        res.status(500).json({ success: false, message: getErrorMessage(error) });
     }
   }
 
-  async listCategories(req: BusinessRequest, res: Response) {
+  async listCategories(req: BusinessRequest, res: Response): Promise<void> {
     try {
-        if (!req.business) return res.status(401).json({ success: false });
+        if (!req.business) {
+          res.status(401).json({ success: false, message: 'Business authentication required' });
+          return;
+        }
         const { type } = req.query;
         const categories = await moneyService.listCategories(req.business.id, type as 'EXPENSE' | 'INCOME');
         res.json({ success: true, data: categories });
-    } catch (error: unknown) {
-        res.status(500).json({ success: false, message: error.message });
+    } catch (error) {
+        res.status(500).json({ success: false, message: getErrorMessage(error) });
     }
   }
 
-  async createExpense(req: BusinessRequest, res: Response) {
+  async createExpense(req: BusinessRequest, res: Response): Promise<void> {
     const startTime = Date.now();
     try {
-        if (!req.business || !req.user) return res.status(401).json({ success: false });
+        if (!req.business || !req.user) {
+          res.status(401).json({ success: false, message: 'Authentication required' });
+          return;
+        }
 
         const validation = createExpenseSchema.safeParse(req.body);
         if (!validation.success) {
-            return res.status(400).json({ success: false, errors: validation.error.errors });
+            res.status(400).json({ success: false, errors: validation.error.errors });
+            return;
         }
 
         const expense = await moneyService.createExpense(req.business.id, req.user.id, validation.data, req);
         logApiRequest(req, res, Date.now() - startTime);
         res.status(201).json({ success: true, data: expense });
-    } catch (error: unknown) {
+    } catch (error) {
         logger.error('Create expense error:', error);
-        res.status(500).json({ success: false, message: error.message });
+        res.status(500).json({ success: false, message: getErrorMessage(error) });
     }
   }
 
-  async listExpenses(req: BusinessRequest, res: Response) {
+  async listExpenses(req: BusinessRequest, res: Response): Promise<void> {
     try {
-        if (!req.business) return res.status(401).json({ success: false });
+        if (!req.business) {
+          res.status(401).json({ success: false, message: 'Business authentication required' });
+          return;
+        }
         
         // Zod coercion for query params check
         const query = {
@@ -74,19 +87,23 @@ export class MoneyController {
 
         const validation = expenseQuerySchema.safeParse(query);
         if (!validation.success) {
-             return res.status(400).json({ success: false, errors: validation.error.errors });
+             res.status(400).json({ success: false, errors: validation.error.errors });
+             return;
         }
 
         const result = await moneyService.listExpenses(req.business.id, validation.data);
         res.json({ success: true, data: result });
-    } catch (error: unknown) {
-        res.status(500).json({ success: false, message: error.message });
+    } catch (error) {
+        res.status(500).json({ success: false, message: getErrorMessage(error) });
     }
   }
 
-  async getFinancialSummary(req: BusinessRequest, res: Response) {
+  async getFinancialSummary(req: BusinessRequest, res: Response): Promise<void> {
     try {
-        if (!req.business) return res.status(401).json({ success: false });
+        if (!req.business) {
+          res.status(401).json({ success: false, message: 'Business authentication required' });
+          return;
+        }
         
         const { startDate, endDate } = req.query;
         const summary = await moneyService.getFinancialSummary(
@@ -95,8 +112,8 @@ export class MoneyController {
             endDate as string
         );
         res.json({ success: true, data: summary });
-    } catch (error: unknown) {
-        res.status(500).json({ success: false, message: error.message });
+    } catch (error) {
+        res.status(500).json({ success: false, message: getErrorMessage(error) });
     }
   }
 }

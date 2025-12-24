@@ -1,4 +1,4 @@
-import { Router } from 'express';
+import { Router, Request } from 'express';
 import { FileController } from '../controllers/file.controller';
 import { authenticateToken } from '../middleware/auth.middleware';
 import { uploadRateLimit } from '../middleware/rate-limit.middleware';
@@ -10,7 +10,7 @@ const fileController = new FileController();
 
 // Configure multer for file uploads
 const storage = multer.diskStorage({
-  destination: (req, file, cb) => {
+  destination: (_req: Request, file: Express.Multer.File, cb: (error: Error | null, destination: string) => void) => {
     let uploadPath = 'uploads/';
     
     // Determine upload path based on file type
@@ -26,7 +26,7 @@ const storage = multer.diskStorage({
     
     cb(null, uploadPath);
   },
-  filename: (req, file, cb) => {
+  filename: (_req: Request, file: Express.Multer.File, cb: (error: Error | null, filename: string) => void) => {
     const uniqueSuffix = Date.now() + '-' + Math.round(Math.random() * 1E9);
     cb(null, file.fieldname + '-' + uniqueSuffix + path.extname(file.originalname));
   },
@@ -37,7 +37,7 @@ const upload = multer({
   limits: {
     fileSize: 50 * 1024 * 1024, // 50MB limit
   },
-  fileFilter: (req, file, cb) => {
+  fileFilter: (_req: Request, file: Express.Multer.File, cb: multer.FileFilterCallback) => {
     // Allow images, videos, and documents
     const allowedMimes = [
       'image/jpeg',
@@ -57,7 +57,7 @@ const upload = multer({
     if (allowedMimes.includes(file.mimetype)) {
       cb(null, true);
     } else {
-      cb(new Error('File type not allowed'), false);
+      cb(new Error('File type not allowed'));
     }
   },
 });

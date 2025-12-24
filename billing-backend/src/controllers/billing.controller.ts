@@ -1,5 +1,4 @@
 import { Response } from 'express';
-import { getErrorMessage } from '../utils/errors';
 import { BillingService } from '../services/billing.service';
 import { BusinessRequest } from '../middleware/auth.middleware';
 import { 
@@ -9,99 +8,103 @@ import {
   billPaymentSchema 
 } from '../schemas/bill.schema';
 import { logApiRequest, logger } from '../utils/logger';
-
-// Type for bill with relations
-interface BillWithRelations {
-  bill: {
-    id: string;
-    billNumber: string;
-    totalAmount: string | number;
-    customer?: {
-      email?: string;
-    };
-  };
-  items: unknown[];
-}
+import { getErrorMessage, AppError, BadRequestError, ForbiddenError, NotFoundError } from '../utils/app-errors';
+import { ZodError } from 'zod';
 
 const billingService = new BillingService();
 
 export class BillingController {
   
-  async createBill(req: BusinessRequest, res: Response) {
+  private handleError(res: Response, error: unknown, defaultMessage: string): Response {
+    logger.error(`${defaultMessage}:`, error);
+
+    if (error instanceof ZodError) {
+      return res.status(400).json({
+        success: false,
+        message: 'Validation failed',
+        errors: error.errors
+      });
+    }
+
+    if (error instanceof AppError) {
+      return res.status(error.statusCode).json({
+        success: false,
+        message: error.message
+      });
+    }
+
+    const message = getErrorMessage(error) || defaultMessage;
+    return res.status(500).json({
+      success: false,
+      message
+    });
+  }
+
+  async createBill(req: BusinessRequest, res: Response): Promise<void> {
     const startTime = Date.now();
     try {
       if (!req.business || !req.user) {
-        return res.status(401).json({ success: false, message: 'Auth required' });
+        throw new ForbiddenError('Auth required');
       }
 
       const validation = createBillSchema.safeParse(req.body);
-      if (!validation.success) {
-        return res.status(400).json({ success: false, errors: validation.error.errors });
-      }
+      if (!validation.success) throw new ZodError(validation.error.issues);
 
       const bill = await billingService.createBill(req.business.id, req.user.id, validation.data, req);
       
       logApiRequest(req, res, Date.now() - startTime);
       res.status(201).json({ success: true, data: bill });
     } catch (error: unknown) {
-      logger.error('Create bill error:', error);
       logApiRequest(req, res, Date.now() - startTime);
-      res.status(500).json({ success: false, message: error.message });
+      this.handleError(res, error, 'Create bill error');
     }
   }
 
-  async getBill(req: BusinessRequest, res: Response) {
+  async getBill(req: BusinessRequest, res: Response): Promise<void> {
     const startTime = Date.now();
     try {
-      if (!req.business) return res.status(401).json({ success: false });
+      if (!req.business) throw new ForbiddenError('Business required');
       
       const { billId } = req.params;
+      if (!billId) throw new BadRequestError('Invalid bill ID');
+
       const bill = await billingService.getBill(req.business.id, billId);
+      if (!bill) throw new NotFoundError('Bill not found');
       
-      logApiRequest(req, res, Date.now() - startTime);
-      res.json({ success: true, data: bill });
       logApiRequest(req, res, Date.now() - startTime);
       res.json({ success: true, data: bill });
     } catch (error: unknown) {
-        logger.error('Get bill error:', error);
-        logApiRequest(req, res, Date.now() - startTime);
-        res.status(404).json({ success: false, message: error.message });
+      logApiRequest(req, res, Date.now() - startTime);
+      this.handleError(res, error, 'Get bill error');
     }
   }
 
-  async updateBill(req: BusinessRequest, res: Response) {
+  async updateBill(req: BusinessRequest, res: Response): Promise<void> {
     const startTime = Date.now();
     try {
-        if (!req.business || !req.user) return res.status(401).json({ success: false });
+        if (!req.business || !req.user) throw new ForbiddenError('Auth required');
         
         const { billId } = req.params;
+        if (!billId) throw new BadRequestError('Invalid bill ID');
+
         const validation = updateBillSchema.safeParse(req.body);
-        if (!validation.success) {
-            return res.status(400).json({ success: false, errors: validation.error.errors });
-        }
+        if (!validation.success) throw new ZodError(validation.error.issues);
 
         const result = await billingService.updateBill(req.business.id, req.user.id, billId, validation.data);
         
         logApiRequest(req, res, Date.now() - startTime);
         res.json({ success: true, data: result });
     } catch (error: unknown) {
-        logger.error('Update bill error:', error);
-        logApiRequest(req, res, Date.now() - startTime);
-        res.status(500).json({ success: false, message: error.message });
+      logApiRequest(req, res, Date.now() - startTime);
+      this.handleError(res, error, 'Update bill error');
     }
   }
 
-  async listBills(req: BusinessRequest, res: Response) {
+  async listBills(req: BusinessRequest, res: Response): Promise<void> {
     const startTime = Date.now();
     try {
-        if (!req.business) return res.status(401).json({ success: false });
+        if (!req.business) throw new ForbiddenError('Auth required');
         
-        // Coerce types from query strings if needed, Zod handles basics but numbers need parsing sometimes
-        // Assuming body parser or advanced query parser handles basic types, 
-        // but for 'minAmount' string -> number conversion might be needed if using express standard behavior without qs lib configuration.
-        // For now, passing req.query directly to schema check which allows some coercion if configured or passed correctly.
-        
-        // Parse query params manually for numbers/booleans if needed:
         const constructedQuery: Record<string, unknown> = { ...req.query };
         if (req.query.page) constructedQuery.page = Number(req.query.page);
         if (req.query.limit) constructedQuery.limit = Number(req.query.limit);
@@ -110,50 +113,87 @@ export class BillingController {
         if (req.query.hasBalance === 'true') constructedQuery.hasBalance = true;
 
         const validation = billQuerySchema.safeParse(constructedQuery);
-        if (!validation.success) {
-             return res.status(400).json({ success: false, errors: validation.error.errors });
-        }
+        if (!validation.success) throw new ZodError(validation.error.issues);
 
         const result = await billingService.listBills(req.business.id, validation.data);
         
         logApiRequest(req, res, Date.now() - startTime);
         res.json({ success: true, data: result });
     } catch (error: unknown) {
-        logger.error('List bills error:', error);
-        logApiRequest(req, res, Date.now() - startTime);
-        res.status(500).json({ success: false, message: error.message });
+      logApiRequest(req, res, Date.now() - startTime);
+      this.handleError(res, error, 'List bills error');
     }
   }
 
-  async recordPayment(req: BusinessRequest, res: Response) {
+  async recordPayment(req: BusinessRequest, res: Response): Promise<void> {
     const startTime = Date.now();
     try {
-        if (!req.business || !req.user) return res.status(401).json({ success: false });
+        if (!req.business || !req.user) throw new ForbiddenError('Auth required');
         
         const { billId } = req.params;
+        if (!billId) throw new BadRequestError('Invalid bill ID');
+
         const validation = billPaymentSchema.safeParse(req.body);
-        if (!validation.success) {
-            return res.status(400).json({ success: false, errors: validation.error.errors });
-        }
+        if (!validation.success) throw new ZodError(validation.error.issues);
 
         const result = await billingService.recordPayment(req.business.id, req.user.id, billId, validation.data, req);
         
         logApiRequest(req, res, Date.now() - startTime);
         res.status(201).json({ success: true, data: result });
     } catch (error: unknown) {
-        logger.error('Record payment error:', error);
-        logApiRequest(req, res, Date.now() - startTime);
-        res.status(500).json({ success: false, message: error.message });
+      logApiRequest(req, res, Date.now() - startTime);
+      this.handleError(res, error, 'Record payment error');
     }
   }
 
-  async generateInvoicePdf(req: BusinessRequest, res: Response) {
+  async getSuggestions(req: BusinessRequest, res: Response): Promise<void> {
     const startTime = Date.now();
     try {
-        if (!req.business) return res.status(401).json({ success: false });
-        const { billId } = req.params;
+        if (!req.business) throw new ForbiddenError('Business required');
         
-        // Dynamic import to avoid circular dependency if any, or just new service
+        const customerId = req.query.customerId as string;
+        if (!customerId) throw new BadRequestError('Customer ID is required');
+
+        const suggestions = await billingService.getSuggestions(req.business.id, customerId);
+        
+        logApiRequest(req, res, Date.now() - startTime);
+        res.json({ success: true, data: suggestions });
+    } catch (error: unknown) {
+      logApiRequest(req, res, Date.now() - startTime);
+      this.handleError(res, error, 'Get suggestions error');
+    }
+  }
+
+  async recordBulkPayment(req: BusinessRequest, res: Response): Promise<void> {
+    const startTime = Date.now();
+    try {
+        if (!req.business || !req.user) throw new ForbiddenError('Auth required');
+        
+        const body = req.body as { customerId?: string };
+        const { customerId } = body;
+        
+        if (!customerId) throw new BadRequestError('Customer ID is required');
+
+        const validation = billPaymentSchema.safeParse(req.body);
+        if (!validation.success) throw new ZodError(validation.error.issues);
+
+        const result = await billingService.recordBulkPayment(req.business.id, req.user.id, customerId, validation.data, req);
+        
+        logApiRequest(req, res, Date.now() - startTime);
+        res.status(201).json({ success: true, data: result });
+    } catch (error: unknown) {
+      logApiRequest(req, res, Date.now() - startTime);
+      this.handleError(res, error, 'Record bulk payment error');
+    }
+  }
+
+  async generateInvoicePdf(req: BusinessRequest, res: Response): Promise<void> {
+    const startTime = Date.now();
+    try {
+        if (!req.business) throw new ForbiddenError('Auth required');
+        const { billId } = req.params;
+        if (!billId) throw new BadRequestError('Invalid bill ID');
+        
         const { InvoiceService } = await import('../services/invoice.service');
         const invoiceService = new InvoiceService();
         
@@ -167,59 +207,67 @@ export class BillingController {
         
         logApiRequest(req, res, Date.now() - startTime);
     } catch (error: unknown) {
-        logger.error('Generate invoice PDF error:', error);
         logApiRequest(req, res, Date.now() - startTime);
         if (!res.headersSent) {
-            res.status(500).json({ success: false, message: error.message });
+           this.handleError(res, error, 'Generate invoice PDF error');
         }
     }
   }
 
-  async shareBill(req: BusinessRequest, res: Response) {
+  async shareBill(req: BusinessRequest, res: Response): Promise<void> {
     const startTime = Date.now();
     try {
-        if (!req.business || !req.user) return res.status(401).json({ success: false });
+        if (!req.business || !req.user) throw new ForbiddenError('Auth required');
         
         const { billId } = req.params;
-        const { email } = req.body; // Can allow overriding email
-
-        // 1. Get Bill to check existence and customer email if not provided
-        const bill = await billingService.getBill(req.business.id, billId);
+        const body = req.body as { email?: string };
+        const { email } = body;
         
-        const targetEmail = email || (bill as BillWithRelations).bill?.customer?.email;
+        if (!billId) throw new BadRequestError('Invalid bill ID');
+
+        // 1. Get Bill
+        const bill = await billingService.getBill(req.business.id, billId);
+        if (!bill) throw new NotFoundError('Bill not found');
+        
+        // Define a partial interface for what we expect from the joined service result
+        type BillWithCustomer = {
+            billNumber: string;
+            customer?: {
+                email?: string | null;
+            } | null;
+        };
+        
+        const billData = bill as unknown as BillWithCustomer;
+        const targetEmail = email || billData.customer?.email;
+        
         if (!targetEmail) {
-            return res.status(400).json({ success: false, message: 'No email provided and customer has no email on record.' });
+            throw new BadRequestError('No email provided and customer has no email on record.');
         }
 
         // 2. Generate PDF
-        // Dynamic import to avoid circular dependency
         const { InvoiceService } = await import('../services/invoice.service');
         const invoiceService = new InvoiceService();
         const doc = await invoiceService.generateInvoicePdf(req.business.id, billId);
 
-        // 3. Convert PDF Stream to Buffer
+        // 3. Buffer
         const buffers: Buffer[] = [];
-        doc.on('data', (chunk) => buffers.push(chunk));
+        doc.on('data', (chunk: Buffer) => buffers.push(chunk));
         
-        // Wait for stream to finish
         const pdfBufferPromise = new Promise<Buffer>((resolve, reject) => {
-            doc.on('end', () => {
-                const pdfData = Buffer.concat(buffers);
-                resolve(pdfData);
-            });
+            doc.on('end', () => resolve(Buffer.concat(buffers)));
             doc.on('error', reject);
         });
         
         doc.end();
         const pdfBuffer = await pdfBufferPromise;
 
-        // 4. Send Email
+        // 4. Email
         const { sendEmail } = await import('../utils/email');
         await sendEmail({
             to: targetEmail,
             subject: `Invoice ${bill.billNumber} from ${req.business.name}`,
-            text: `Dear Customer,\n\nPlease find attached your invoice ${bill.billNumber} for amount ${(bill as BillWithRelations).bill?.totalAmount || 'N/A'}.\n\nThank you,\n${req.business.name}`,
-            html: `<p>Dear Customer,</p><p>Please find attached your invoice <strong>${bill.billNumber}</strong> for amount <strong>${(bill as BillWithRelations).bill?.totalAmount || 'N/A'}</strong>.</p><p>Thank you,<br/>${req.business.name}</p>`,
+            text: `Dear Customer,\n\nPlease find attached your invoice ${bill.billNumber}.\n\nThank you,\n${req.business.name}`,
+            html: `<p>Dear Customer,</p><p>Please find attached your invoice <strong>${bill.billNumber}</strong>.</p>`,
             attachments: [
                 {
                     filename: `Invoice-${bill.billNumber}.pdf`,
@@ -232,9 +280,8 @@ export class BillingController {
         res.json({ success: true, message: 'Invoice sent successfully' });
 
     } catch (error: unknown) {
-        logger.error('Share bill error:', error);
         logApiRequest(req, res, Date.now() - startTime);
-        res.status(500).json({ success: false, message: error.message });
+        this.handleError(res, error, 'Share bill error');
     }
   }
 }

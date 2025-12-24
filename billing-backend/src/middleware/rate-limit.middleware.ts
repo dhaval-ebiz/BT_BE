@@ -11,7 +11,7 @@ interface RateLimitOptions {
   keyGenerator?: (req: Request) => string;
 }
 
-export function createRateLimiter(options: RateLimitOptions) {
+export function createRateLimiter(options: RateLimitOptions): (req: Request, res: Response, next: NextFunction) => Promise<void> {
   const {
     windowMs,
     max,
@@ -19,7 +19,7 @@ export function createRateLimiter(options: RateLimitOptions) {
     keyGenerator = (req: Request) => req.ip || 'anonymous',
   } = options;
 
-  return async (req: Request, res: Response, next: NextFunction) => {
+  return async (req: Request, res: Response, next: NextFunction): Promise<void> => {
     try {
       const key = `rate_limit:${keyGenerator(req)}`;
       const now = Date.now();
@@ -49,13 +49,14 @@ export function createRateLimiter(options: RateLimitOptions) {
         
         const resetTime = Math.ceil((now + windowMs) / 1000);
         
-        return res.status(429).json({
+        res.status(429).json({
           success: false,
           message,
           retryAfter: Math.ceil((resetTime - now / 1000)),
           limit: max,
           window: windowMs,
         });
+        return;
       }
 
       res.setHeader('X-RateLimit-Limit', max);
@@ -83,7 +84,8 @@ export const authRateLimit = createRateLimiter({
   message: 'Too many authentication attempts, please try again later',
   keyGenerator: (req: Request) => {
     // Rate limit by both IP and email for auth endpoints
-    const email = req.body.email || 'anonymous';
+    const body = req.body as Record<string, string>;
+    const email = body.email || 'anonymous';
     return `${req.ip}:${email}`;
   },
 });

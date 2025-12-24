@@ -5,12 +5,12 @@ import {
   CreateMerchantInput, 
   UpdateMerchantInput, 
   MerchantQueryInput,
-  // MerchantPaymentInput 
+  MerchantPaymentInput 
 } from '../schemas/merchant.schema';
 import { logger } from '../utils/logger';
 
 export class MerchantService {
-  async createMerchant(businessId: string, input: CreateMerchantInput) {
+  async createMerchant(businessId: string, input: CreateMerchantInput): Promise<typeof merchants.$inferSelect> {
     const {
       merchantCode,
       name,
@@ -61,22 +61,26 @@ export class MerchantService {
         ifscCode: bankDetails?.ifscCode,
         gstNumber,
         panNumber,
-        creditLimit: creditLimit || 0,
+        creditLimit: creditLimit?.toString() || '0',
         paymentTerms: paymentTerms || 30,
-        outstandingBalance: 0,
-        totalPurchases: 0,
-        totalPayments: 0,
+        outstandingBalance: '0',
+        totalPurchases: '0',
+        totalPayments: '0',
         notes,
         isActive: true,
       })
       .returning();
 
-    logger.info('Merchant created', { merchantId: merchant.id, businessId, merchantCode: finalMerchantCode });
+    logger.info('Merchant created', { merchantId: merchant?.id, businessId, merchantCode: finalMerchantCode });
+
+    if (!merchant) {
+      throw new Error('Failed to create merchant');
+    }
 
     return merchant;
   }
 
-  async getMerchant(businessId: string, merchantId: string) {
+  async getMerchant(businessId: string, merchantId: string): Promise<typeof merchants.$inferSelect> {
     const [merchant] = await db
       .select()
       .from(merchants)
@@ -93,7 +97,7 @@ export class MerchantService {
     return merchant;
   }
 
-  async updateMerchant(businessId: string, merchantId: string, input: UpdateMerchantInput) {
+  async updateMerchant(businessId: string, merchantId: string, input: UpdateMerchantInput): Promise<typeof merchants.$inferSelect> {
     const updateData: Partial<typeof merchants.$inferInsert> = {};
 
     if (input.merchantCode !== undefined) updateData.merchantCode = input.merchantCode;
@@ -138,7 +142,7 @@ export class MerchantService {
     return updatedMerchant;
   }
 
-  async deleteMerchant(businessId: string, merchantId: string) {
+  async deleteMerchant(businessId: string, merchantId: string): Promise<{ message: string }> {
 /*
     // Check if merchant has any payments
     const merchantPaymentsData = await db
@@ -172,7 +176,7 @@ export class MerchantService {
     return { message: 'Merchant deleted successfully' };
   }
 
-  async getMerchants(businessId: string, query: MerchantQueryInput) {
+  async getMerchants(businessId: string, query: MerchantQueryInput): Promise<{ merchants: (typeof merchants.$inferSelect)[]; pagination: { page: number; limit: number; total: number; totalPages: number } }> {
     const { 
       search, 
       isActive, 
@@ -214,7 +218,7 @@ export class MerchantService {
       .from(merchants)
       .where(and(...conditions));
 
-    const total = countResult.count;
+    const total = countResult?.count || 0;
     const totalPages = Math.ceil(total / limit);
     const offset = (page - 1) * limit;
 
@@ -248,113 +252,31 @@ export class MerchantService {
     };
   }
 
-/*
   async addMerchantPayment(
     businessId: string,
     merchantId: string,
-    userId: string,
-    input: MerchantPaymentInput
-  ) {
-    const { amount, method, referenceNumber, notes } = input;
-
-    // Validate merchant
-    const [merchant] = await db
-      .select()
-      .from(merchants)
-      .where(and(
-        eq(merchants.id, merchantId),
-        eq(merchants.businessId, businessId)
-      ))
-      .limit(1);
-
-    if (!merchant) {
-      throw new Error('Merchant not found');
-    }
-
-    // Generate payment number
-    const paymentNumber = `MERC-PAY-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
-
-    // Create payment
-    const [payment] = await db
-      .insert(merchantPayments)
-      .values({
-        businessId,
-        merchantId,
-        paymentNumber,
-        paymentDate: new Date(),
-        amount,
-        method,
-        status: 'COMPLETED',
-        referenceNumber,
-        notes,
-        createdBy: userId,
-      })
-      .returning();
-
-    // Update merchant balance
-    await db
-      .update(merchants)
-      .set({
-        outstandingBalance: sql`${merchants.outstandingBalance} - ${amount}`,
-        totalPayments: sql`${merchants.totalPayments} + ${amount}`,
-      })
-      .where(eq(merchants.id, merchantId));
-
-    logger.info('Merchant payment added', { paymentId: payment.id, merchantId, amount });
-
-    return payment;
+    _userId: string,
+    _input: MerchantPaymentInput
+  ): Promise<void> {
+    // Stub implementation until merchant_payments table is created
+    logger.warn('addMerchantPayment called but not implemented', { businessId, merchantId });
+    throw new Error('Merchant payments not yet implemented');
   }
 
-  async getMerchantPayments(businessId: string, merchantId: string, page: number = 1, limit: number = 20) {
-    // Validate merchant
-    const [merchant] = await db
-      .select()
-      .from(merchants)
-      .where(and(
-        eq(merchants.id, merchantId),
-        eq(merchants.businessId, businessId)
-      ))
-      .limit(1);
-
-    if (!merchant) {
-      throw new Error('Merchant not found');
-    }
-
-    const [countResult] = await db
-      .select({ count: count() })
-      .from(merchantPayments)
-      .where(and(
-        eq(merchantPayments.merchantId, merchantId),
-        eq(merchantPayments.businessId, businessId)
-      ));
-
-    const total = countResult.count;
-    const totalPages = Math.ceil(total / limit);
-
-    const payments = await db
-      .select()
-      .from(merchantPayments)
-      .where(and(
-        eq(merchantPayments.merchantId, merchantId),
-        eq(merchantPayments.businessId, businessId)
-      ))
-      .orderBy(desc(merchantPayments.paymentDate))
-      .limit(limit)
-      .offset((page - 1) * limit);
-
+  async getMerchantPayments(_businessId: string, _merchantId: string, page: number = 1, limit: number = 20): Promise<{ payments: unknown[]; pagination: { page: number; limit: number; total: number; totalPages: number } }> {
+    // Stub implementation until merchant_payments table is created
     return {
-      payments,
+      payments: [],
       pagination: {
         page,
         limit,
-        total,
-        totalPages,
+        total: 0,
+        totalPages: 0,
       },
     };
   }
-  */
 
-  async getMerchantStats(businessId: string) {
+  async getMerchantStats(businessId: string): Promise<{ totalMerchants: number; activeMerchants: number; merchantsWithOutstanding: number; totalOutstanding: number }> {
     const [totalMerchants] = await db
       .select({ count: count() })
       .from(merchants)
@@ -382,10 +304,10 @@ export class MerchantService {
       .where(eq(merchants.businessId, businessId));
 
     return {
-      totalMerchants: totalMerchants.count,
-      activeMerchants: activeMerchants.count,
-      merchantsWithOutstanding: merchantsWithOutstanding.count,
-      totalOutstanding: totalOutstanding.total || 0,
+      totalMerchants: totalMerchants?.count || 0,
+      activeMerchants: activeMerchants?.count || 0,
+      merchantsWithOutstanding: merchantsWithOutstanding?.count || 0,
+      totalOutstanding: Number(totalOutstanding?.total || 0),
     };
   }
 

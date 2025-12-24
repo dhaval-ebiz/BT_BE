@@ -1,31 +1,73 @@
 import { Response } from 'express';
-import { getErrorMessage } from '../utils/errors';
 import { AIGenerationService } from '../services/ai.service';
 import { BusinessRequest } from '../middleware/auth.middleware';
 import { logger, logApiRequest } from '../utils/logger';
 import { addAIGenerationJob } from '../queues/bullmq';
+import { getErrorMessage, AppError, BadRequestError, ForbiddenError } from '../utils/app-errors';
+import { db } from '../config/database';
+import { retailBusinesses } from '../models/drizzle/schema';
+import { eq, sql } from 'drizzle-orm';
+import { ZodError } from 'zod';
 
 const aiService = new AIGenerationService();
 
 export class AIController {
-  async generateBanner(req: BusinessRequest, res: Response) {
+  private handleError(res: Response, error: unknown, defaultMessage: string): Response {
+    logger.error(`${defaultMessage}:`, error);
+
+    if (error instanceof ZodError) {
+      return res.status(400).json({
+        success: false,
+        message: 'Validation failed',
+        errors: error.errors
+      });
+    }
+
+    if (error instanceof AppError) {
+      return res.status(error.statusCode).json({
+        success: false,
+        message: error.message
+      });
+    }
+
+    const message = getErrorMessage(error) || defaultMessage;
+    // Don't expose internal server errors details in production usually, but keeping message for now
+    return res.status(500).json({
+      success: false,
+      message
+    });
+  }
+
+  async generateBanner(req: BusinessRequest, res: Response): Promise<void> {
     const startTime = Date.now();
     
     try {
       if (!req.business || !req.user) {
-        return res.status(401).json({
-          success: false,
-          message: 'Business authentication required',
-        });
+        throw new ForbiddenError('Business authentication required');
       }
 
-      const { prompt } = req.body;
+      const body = req.body as { prompt?: string };
+      const { prompt } = body;
       
       if (!prompt) {
-        return res.status(400).json({
-          success: false,
-          message: 'Prompt is required',
-        });
+        throw new BadRequestError('Prompt is required');
+      }
+
+      // Check Quota
+      const [business] = await db
+        .select({
+            usedImageQuota: retailBusinesses.usedImageQuota,
+            monthlyImageQuota: retailBusinesses.monthlyImageQuota
+        })
+        .from(retailBusinesses)
+        .where(eq(retailBusinesses.id, req.business.id));
+      
+      if (!business) {
+        throw new BadRequestError('Business not found');
+      }
+
+      if (business.usedImageQuota >= business.monthlyImageQuota) {
+        throw new ForbiddenError(`Monthly image quota exceeded (${business.usedImageQuota}/${business.monthlyImageQuota})`);
       }
 
       // Add to background job queue for better performance
@@ -36,6 +78,13 @@ export class AIController {
         req.business.id
       );
 
+      // Optimistically increment quota or rely on worker to do it? 
+      // For now, we will increment it here to prevent rapid-fire abuse, 
+      // and if the job fails, the worker can ideally decrement it (or we accept the safe side error).
+      await db.update(retailBusinesses)
+        .set({ usedImageQuota: sql`${retailBusinesses.usedImageQuota} + 1` })
+        .where(eq(retailBusinesses.id, req.business.id));
+
       logApiRequest(req, res, Date.now() - startTime);
       
       res.json({
@@ -43,37 +92,31 @@ export class AIController {
         data: {
           jobId: job.id,
           message: 'Banner generation started',
+          quota: {
+            used: business.usedImageQuota + 1,
+            limit: business.monthlyImageQuota
+          }
         },
       });
     } catch (error: unknown) {
-      logger.error('Generate banner error:', error);
       logApiRequest(req, res, Date.now() - startTime);
-      
-      res.status(500).json({
-        success: false,
-        message: error.message || 'Banner generation failed',
-      });
+      this.handleError(res, error, 'Banner generation failed');
     }
   }
 
-  async generateSQLQuery(req: BusinessRequest, res: Response) {
+  async generateSQLQuery(req: BusinessRequest, res: Response): Promise<void> {
     const startTime = Date.now();
     
     try {
       if (!req.business || !req.user) {
-        return res.status(401).json({
-          success: false,
-          message: 'Business authentication required',
-        });
+        throw new ForbiddenError('Business authentication required');
       }
 
-      const { prompt } = req.body;
+      const body = req.body as { prompt?: string };
+      const { prompt } = body;
       
       if (!prompt) {
-        return res.status(400).json({
-          success: false,
-          message: 'Prompt is required',
-        });
+        throw new BadRequestError('Prompt is required');
       }
 
       const query = await aiService.generateSQLQuery(
@@ -81,6 +124,25 @@ export class AIController {
         req.user.id,
         req.business.id
       );
+
+      // Track AI Usage if we want to limit "Queries" too? 
+      // Current schema has `monthlyAiQueryQuota`.
+      // Let's implement that check as well.
+
+      const [business] = await db
+        .select({
+            usedAiQueryQuota: retailBusinesses.usedAiQueryQuota,
+            monthlyAiQueryQuota: retailBusinesses.monthlyAiQueryQuota
+        })
+        .from(retailBusinesses)
+        .where(eq(retailBusinesses.id, req.business.id));
+
+        // Soft limit or Hard limit? Let's do Soft for now as SQL is cheap, but tracking is good.
+        if (business) {
+             await db.update(retailBusinesses)
+            .set({ usedAiQueryQuota: sql`${retailBusinesses.usedAiQueryQuota} + 1` })
+            .where(eq(retailBusinesses.id, req.business.id));
+        }
 
       logApiRequest(req, res, Date.now() - startTime);
       
@@ -91,34 +153,24 @@ export class AIController {
         },
       });
     } catch (error: unknown) {
-      logger.error('Generate SQL query error:', error);
       logApiRequest(req, res, Date.now() - startTime);
-      
-      res.status(400).json({
-        success: false,
-        message: error.message || 'SQL query generation failed',
-      });
+      this.handleError(res, error, 'SQL query generation failed');
     }
   }
 
-  async generateText(req: BusinessRequest, res: Response) {
+  async generateText(req: BusinessRequest, res: Response): Promise<void> {
     const startTime = Date.now();
     
     try {
       if (!req.business || !req.user) {
-        return res.status(401).json({
-          success: false,
-          message: 'Business authentication required',
-        });
+        throw new ForbiddenError('Business authentication required');
       }
 
-      const { prompt, style = 'professional' } = req.body;
+      const body = req.body as { prompt?: string; style?: string };
+      const { prompt, style = 'professional' } = body;
       
       if (!prompt) {
-        return res.status(400).json({
-          success: false,
-          message: 'Prompt is required',
-        });
+        throw new BadRequestError('Prompt is required');
       }
 
       const text = await aiService.generateText(
@@ -137,32 +189,24 @@ export class AIController {
         },
       });
     } catch (error: unknown) {
-      logger.error('Generate text error:', error);
       logApiRequest(req, res, Date.now() - startTime);
-      
-      res.status(500).json({
-        success: false,
-        message: error.message || 'Text generation failed',
-      });
+      this.handleError(res, error, 'Text generation failed');
     }
   }
 
-  async getGeneratedContent(req: BusinessRequest, res: Response) {
+  async getGeneratedContent(req: BusinessRequest, res: Response): Promise<void> {
     const startTime = Date.now();
     
     try {
       if (!req.business) {
-        return res.status(401).json({
-          success: false,
-          message: 'Business authentication required',
-        });
+        throw new ForbiddenError('Business authentication required');
       }
 
-      const { type, limit = 20 } = req.query;
+      const { type, limit = '20' } = req.query as { type?: string; limit?: string };
       const content = await aiService.getGeneratedContent(
         req.business.id,
-        type as string,
-        parseInt(limit as string)
+        type,
+        parseInt(limit, 10)
       );
 
       logApiRequest(req, res, Date.now() - startTime);
@@ -172,28 +216,23 @@ export class AIController {
         data: content,
       });
     } catch (error: unknown) {
-      logger.error('Get generated content error:', error);
       logApiRequest(req, res, Date.now() - startTime);
-      
-      res.status(500).json({
-        success: false,
-        message: error.message || 'Failed to fetch generated content',
-      });
+      this.handleError(res, error, 'Failed to fetch generated content');
     }
   }
 
-  async deleteGeneratedContent(req: BusinessRequest, res: Response) {
+  async deleteGeneratedContent(req: BusinessRequest, res: Response): Promise<void> {
     const startTime = Date.now();
     
     try {
       if (!req.business) {
-        return res.status(401).json({
-          success: false,
-          message: 'Business authentication required',
-        });
+        throw new ForbiddenError('Business authentication required');
       }
 
       const contentId = req.params.contentId;
+      if (!contentId) {
+        throw new BadRequestError('Content ID is required');
+      }
       const result = await aiService.deleteGeneratedContent(
         req.business.id,
         contentId
@@ -206,34 +245,24 @@ export class AIController {
         data: result,
       });
     } catch (error: unknown) {
-      logger.error('Delete generated content error:', error);
       logApiRequest(req, res, Date.now() - startTime);
-      
-      res.status(404).json({
-        success: false,
-        message: error.message || 'Content not found',
-      });
+      this.handleError(res, error, 'Content not found');
     }
   }
 
-  async executeSQLQuery(req: BusinessRequest, res: Response) {
+  async executeSQLQuery(req: BusinessRequest, res: Response): Promise<void> {
     const startTime = Date.now();
     
     try {
       if (!req.business) {
-        return res.status(401).json({
-          success: false,
-          message: 'Business authentication required',
-        });
+        throw new ForbiddenError('Business authentication required');
       }
 
-      const { query } = req.body;
+      const body = req.body as { query?: string };
+      const { query } = body;
       
       if (!query) {
-        return res.status(400).json({
-          success: false,
-          message: 'Query is required',
-        });
+        throw new BadRequestError('Query is required');
       }
 
       const results = await aiService.executeSQLQuery(query, req.business.id);
@@ -245,13 +274,8 @@ export class AIController {
         data: results,
       });
     } catch (error: unknown) {
-      logger.error('Execute SQL query error:', error);
       logApiRequest(req, res, Date.now() - startTime);
-      
-      res.status(400).json({
-        success: false,
-        message: error.message || 'Query execution failed',
-      });
+      this.handleError(res, error, 'Query execution failed');
     }
   }
 }

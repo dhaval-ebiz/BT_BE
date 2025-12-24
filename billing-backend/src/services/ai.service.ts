@@ -22,7 +22,7 @@ export class AIGenerationService {
         n: 1,
       });
 
-      const imageUrl = response.data[0].url;
+      const imageUrl = response?.data?.[0]?.url;
       
       if (!imageUrl) {
         throw new Error('No image generated');
@@ -40,7 +40,7 @@ export class AIGenerationService {
       await db.insert(aiGeneratedContent).values({
         businessId,
         userId,
-        type: 'banner',
+        type: 'BANNER',
         prompt,
         content: s3Url,
         metadata: {
@@ -100,7 +100,7 @@ Important Rules:
         max_tokens: 500,
       });
 
-      const sqlQuery = response.choices[0].message.content;
+      const sqlQuery = response?.choices?.[0]?.message?.content;
       
       if (!sqlQuery) {
         throw new Error('No SQL query generated');
@@ -125,7 +125,7 @@ Important Rules:
       await db.insert(aiGeneratedContent).values({
         businessId,
         userId,
-        type: 'sql_query',
+        type: 'SQL_QUERY',
         prompt,
         content: sqlQuery,
         metadata: {
@@ -170,7 +170,7 @@ Important Rules:
         max_tokens: 1000,
       });
 
-      const generatedText = response.choices[0].message.content;
+      const generatedText = response?.choices?.[0]?.message?.content;
       
       if (!generatedText) {
         throw new Error('No text generated');
@@ -180,7 +180,7 @@ Important Rules:
       await db.insert(aiGeneratedContent).values({
         businessId,
         userId,
-        type: 'text',
+        type: 'TEXT',
         prompt,
         content: generatedText,
         metadata: {
@@ -198,9 +198,9 @@ Important Rules:
     }
   }
 
-  async getGeneratedContent(businessId: string, type?: string, limit: number = 20) {
+  async getGeneratedContent(businessId: string, type?: string, limit: number = 20): Promise<typeof aiGeneratedContent.$inferSelect[]> {
     const conditions = type 
-      ? and(eq(aiGeneratedContent.businessId, businessId), eq(aiGeneratedContent.type, type))
+      ? and(eq(aiGeneratedContent.businessId, businessId), eq(aiGeneratedContent.type, type as 'BANNER' | 'SQL_QUERY' | 'TEXT'))
       : eq(aiGeneratedContent.businessId, businessId);
 
     return await db
@@ -211,7 +211,7 @@ Important Rules:
       .limit(limit);
   }
 
-  async deleteGeneratedContent(businessId: string, contentId: string) {
+  async deleteGeneratedContent(businessId: string, contentId: string): Promise<{ message: string }> {
     const [deletedContent] = await db
       .delete(aiGeneratedContent)
       .where(and(
@@ -251,7 +251,7 @@ Important Rules:
       
       aiLogger.info('SQL query executed successfully', { businessId, rowCount: result.rows?.length || 0 });
       
-      return result;
+      return result.rows;
     } catch (error) {
       aiLogger.error('Failed to execute SQL query', { error, businessId });
       throw error;

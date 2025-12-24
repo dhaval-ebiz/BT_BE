@@ -4,21 +4,22 @@ import { eq, and } from 'drizzle-orm';
 import { logger } from '../utils/logger';
 import { AuditService } from './audit.service';
 import { NotificationService } from './notification.service';
-import { z } from 'zod';
+// Duplicate import removed
 
 const auditService = new AuditService();
 const notificationService = new NotificationService();
 
 // Validation schemas
-const _approvalActionSchema = z.object({
-  action: z.enum(['approve', 'reject']),
-  notes: z.string().optional(),
-});
+// Validation schemas
+// const _approvalActionSchema = z.object({
+//   action: z.enum(['approve', 'reject']),
+//   notes: z.string().optional(),
+// });
 
-const _billSubmissionSchema = z.object({
-  billId: z.string().uuid(),
-  requiresApproval: z.boolean().default(false),
-});
+// const _billSubmissionSchema = z.object({
+//   billId: z.string().uuid(),
+//   requiresApproval: z.boolean().default(false),
+// });
 
 export class BillApprovalService {
   /**
@@ -29,7 +30,7 @@ export class BillApprovalService {
     billId: string,
     submittedBy: string,
     requiresApproval: boolean = true
-  ) {
+  ): Promise<typeof bills.$inferSelect> {
     try {
       // Check if bill exists and belongs to the business
       const bill = await db
@@ -43,6 +44,9 @@ export class BillApprovalService {
       }
 
       const existingBill = bill[0];
+      if (!existingBill) {
+        throw new Error('Bill not found');
+      }
 
       // Check if bill can be submitted for approval
       if (existingBill.status !== 'DRAFT') {
@@ -95,6 +99,7 @@ export class BillApprovalService {
         requiresApproval,
       });
 
+      if (!updatedBill[0]) throw new Error('Failed to update bill');
       return updatedBill[0];
     } catch (error) {
       logger.error('Error submitting bill for approval', { error, billId, businessId });
@@ -111,7 +116,7 @@ export class BillApprovalService {
     approvedBy: string,
     action: 'approve' | 'reject',
     notes?: string
-  ) {
+  ): Promise<typeof bills.$inferSelect> {
     try {
       // Check if bill exists and belongs to the business
       const bill = await db
@@ -125,6 +130,9 @@ export class BillApprovalService {
       }
 
       const existingBill = bill[0];
+      if (!existingBill) {
+        throw new Error('Bill not found');
+      }
 
       // Check if bill requires approval
       if (!existingBill.requiresApproval || existingBill.approvalStatus !== 'PENDING') {
@@ -143,6 +151,8 @@ export class BillApprovalService {
       }
 
       const approverUser = approver[0];
+      if (!approverUser) throw new Error('Approver not found');
+
       if (!['RETAIL_OWNER', 'SUPER_ADMIN'].includes(approverUser.role)) {
         throw new Error('Only business owners can approve bills');
       }
@@ -203,6 +213,7 @@ export class BillApprovalService {
         notes,
       });
 
+      if (!updatedBill[0]) throw new Error('Failed to update bill');
       return updatedBill[0];
     } catch (error) {
       logger.error('Error processing bill approval', { error, billId, businessId, action });
@@ -213,7 +224,7 @@ export class BillApprovalService {
   /**
    * Get bills pending approval for a business
    */
-  async getBillsPendingApproval(businessId: string, limit: number = 50, offset: number = 0) {
+  async getBillsPendingApproval(businessId: string, limit: number = 50, offset: number = 0): Promise<unknown[]> {
     try {
       const pendingBills = await db
         .select({
@@ -248,7 +259,7 @@ export class BillApprovalService {
   /**
    * Get approval history for a bill
    */
-  async getBillApprovalHistory(businessId: string, billId: string) {
+  async getBillApprovalHistory(_businessId: string, billId: string): Promise<unknown[]> {
     try {
       const history = await db
         .select({
@@ -267,7 +278,6 @@ export class BillApprovalService {
         .orderBy(billApprovalHistory.createdAt);
 
       return history;
-      return [];
     } catch (error) {
       logger.error('Error getting bill approval history', { error, billId });
       throw error;
@@ -279,10 +289,10 @@ export class BillApprovalService {
    */
   async configureApprovalWorkflow(
     businessId: string,
-    enabled: boolean,
+    enabled?: boolean,
     thresholdAmount?: number,
-    autoApproveBelowThreshold: boolean = false
-  ) {
+    autoApproveBelowThreshold?: boolean
+  ): Promise<{ businessId: string; approvalWorkflowEnabled: boolean | undefined; thresholdAmount: number | undefined; autoApproveBelowThreshold: boolean | undefined }> {
     try {
       // This would typically update business settings
       // For now, we'll just log the configuration
@@ -313,9 +323,9 @@ export class BillApprovalService {
     billIds: string[],
     approvedBy: string,
     notes?: string
-  ) {
+  ): Promise<Array<{ billId: string; success: boolean; data?: typeof bills.$inferSelect; error?: string }>> {
     try {
-      const results = [];
+      const results: Array<{ billId: string; success: boolean; data?: typeof bills.$inferSelect; error?: string }> = [];
 
       for (const billId of billIds) {
         try {
@@ -342,7 +352,7 @@ export class BillApprovalService {
   /**
    * Notify business owner for bill approval
    */
-  private async notifyOwnerForApproval(businessId: string, billId: string) {
+  private async notifyOwnerForApproval(businessId: string, billId: string): Promise<void> {
     try {
       // Get business owner
       const business = await db
@@ -351,7 +361,7 @@ export class BillApprovalService {
         .where(eq(retailBusinesses.id, businessId))
         .limit(1);
 
-      if (business.length) {
+      if (business.length && business[0]) {
         await notificationService.sendNotification({
           type: 'BILL_APPROVAL_REQUEST',
           recipientId: business[0].ownerId,
@@ -376,7 +386,7 @@ export class BillApprovalService {
     billId: string,
     action: 'approve' | 'reject',
     notes?: string
-  ) {
+  ): Promise<void> {
     try {
       const bill = await db
         .select()
@@ -384,10 +394,11 @@ export class BillApprovalService {
         .where(eq(bills.id, billId))
         .limit(1);
 
-      if (bill.length && bill[0].createdBy) {
+      const foundBill = bill[0];
+      if (bill.length && foundBill && foundBill.createdBy) {
         await notificationService.sendNotification({
           type: action === 'approve' ? 'BILL_APPROVED' : 'BILL_REJECTED',
-          recipientId: bill[0].createdBy,
+          recipientId: foundBill.createdBy,
           businessId,
           entityId: billId,
           entityType: 'BILL',

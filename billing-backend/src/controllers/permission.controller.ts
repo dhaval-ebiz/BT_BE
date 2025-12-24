@@ -1,7 +1,8 @@
-import { Request, Response } from 'express';
-import { PermissionService } from '../services/permission.service';
+import { Response } from 'express';
+import { PermissionService, PERMISSIONS, Permission } from '../services/permission.service';
 import { logger } from '../utils/logger';
 import { z } from 'zod';
+import { AuthenticatedRequest } from '../types/common';
 
 const permissionService = new PermissionService();
 
@@ -20,10 +21,18 @@ export class PermissionController {
   /**
    * Get current user's permissions
    */
-  async getMyPermissions(req: Request, res: Response) {
+  async getMyPermissions(req: AuthenticatedRequest, res: Response): Promise<void> {
     try {
-      const userId = req.user!.id;
+      if (!req.user) {
+        res.status(401).json({ success: false, message: 'Authentication required' });
+        return;
+      }
+      const userId = req.user.id;
       const { businessId } = req.params;
+      if (!businessId) {
+        res.status(400).json({ success: false, message: 'Business ID is required' });
+        return;
+      }
 
       const permissions = await permissionService.getUserPermissions(userId, businessId);
 
@@ -31,7 +40,7 @@ export class PermissionController {
         success: true,
         data: {
           permissions,
-          role: req.user!.role,
+          role: req.user.role,
         },
         timestamp: new Date().toISOString(),
       });
@@ -48,20 +57,37 @@ export class PermissionController {
   /**
    * Check specific permission
    */
-  async checkPermission(req: Request, res: Response) {
+  async checkPermission(req: AuthenticatedRequest, res: Response): Promise<void> {
     try {
-      const userId = req.user!.id;
+      if (!req.user) {
+        res.status(401).json({ success: false, message: 'Authentication required' });
+        return;
+      }
+      const userId = req.user.id;
       const { businessId } = req.params;
+      if (!businessId) {
+        res.status(400).json({ success: false, message: 'Business ID is required' });
+        return;
+      }
       const { permission } = req.query;
 
       if (!permission || typeof permission !== 'string') {
-        return res.status(400).json({
+        res.status(400).json({
           success: false,
           message: 'Permission parameter is required',
         });
+        return;
       }
 
-      const hasPermission = await permissionService.hasPermission(userId, businessId, permission);
+      if (!Object.values(PERMISSIONS).includes(permission as Permission)) {
+        res.status(400).json({
+          success: false,
+          message: 'Invalid permission value',
+        });
+        return;
+      }
+
+      const hasPermission = await permissionService.hasPermission(userId, businessId, permission as Permission);
 
       res.json({
         success: true,
@@ -84,9 +110,9 @@ export class PermissionController {
   /**
    * Get permission matrix
    */
-  async getPermissionMatrix(req: Request, res: Response) {
+  async getPermissionMatrix(_req: AuthenticatedRequest, res: Response): Promise<void> {
     try {
-      const matrix = permissionService.getPermissionMatrix();
+      const matrix = await permissionService.getPermissionMatrix();
 
       res.json({
         success: true,
@@ -106,10 +132,18 @@ export class PermissionController {
   /**
    * Assign role to staff member
    */
-  async assignStaffRole(req: Request, res: Response) {
+  async assignStaffRole(req: AuthenticatedRequest, res: Response): Promise<void> {
     try {
+      if (!req.user) {
+        res.status(401).json({ success: false, message: 'Authentication required' });
+        return;
+      }
       const { businessId } = req.params;
-      const ownerId = req.user!.id;
+      if (!businessId) {
+        res.status(400).json({ success: false, message: 'Business ID is required' });
+        return;
+      }
+      const ownerId = req.user.id;
       const { userId, role, permissions } = assignRoleSchema.parse(req.body);
 
       const result = await permissionService.assignStaffRole(
@@ -139,10 +173,18 @@ export class PermissionController {
   /**
    * Remove staff member
    */
-  async removeStaffMember(req: Request, res: Response) {
+  async removeStaffMember(req: AuthenticatedRequest, res: Response): Promise<void> {
     try {
+      if (!req.user) {
+        res.status(401).json({ success: false, message: 'Authentication required' });
+        return;
+      }
       const { businessId } = req.params;
-      const ownerId = req.user!.id;
+      if (!businessId) {
+        res.status(400).json({ success: false, message: 'Business ID is required' });
+        return;
+      }
+      const ownerId = req.user.id;
       const { userId } = removeStaffSchema.parse(req.body);
 
       const result = await permissionService.removeStaffMember(businessId, ownerId, userId);
@@ -166,10 +208,18 @@ export class PermissionController {
   /**
    * Get business staff members
    */
-  async getBusinessStaff(req: Request, res: Response) {
+  async getBusinessStaff(req: AuthenticatedRequest, res: Response): Promise<void> {
     try {
+      if (!req.user) {
+        res.status(401).json({ success: false, message: 'Authentication required' });
+        return;
+      }
       const { businessId } = req.params;
-      const ownerId = req.user!.id;
+      if (!businessId) {
+        res.status(400).json({ success: false, message: 'Business ID is required' });
+        return;
+      }
+      const ownerId = req.user.id;
 
       const staff = await permissionService.getBusinessStaff(businessId, ownerId);
 
@@ -191,24 +241,26 @@ export class PermissionController {
   /**
    * Validate permissions
    */
-  async validatePermissions(req: Request, res: Response) {
+  async validatePermissions(req: AuthenticatedRequest, res: Response): Promise<void> {
     try {
-      const { permissions } = req.body;
+      const body = req.body as { permissions?: unknown };
+      const { permissions } = body;
 
       if (!Array.isArray(permissions)) {
-        return res.status(400).json({
+        res.status(400).json({
           success: false,
           message: 'Permissions must be an array',
         });
+        return;
       }
 
-      const validPermissions = permissionService.validatePermissions(permissions);
+      const validPermissions = permissionService.validatePermissions(permissions as string[]);
 
       res.json({
         success: true,
         data: {
           validPermissions,
-          invalidPermissions: permissions.filter(p => !validPermissions.includes(p as string)),
+          invalidPermissions: (permissions as string[]).filter(p => !validPermissions.includes(p)),
         },
         timestamp: new Date().toISOString(),
       });

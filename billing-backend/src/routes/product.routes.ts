@@ -1,4 +1,4 @@
-import { Router } from 'express';
+import { Router, Request, Response } from 'express';
 import { ProductController } from '../controllers/product.controller';
 import { 
   authenticateToken, 
@@ -13,14 +13,17 @@ import {
   createProductSchema, 
   updateProductSchema, 
   productQuerySchema,
-  stockAdjustmentSchema 
+  stockAdjustmentSchema,
+  createCategorySchema,
+  updateCategorySchema,
+  createVariantSchema
 } from '../schemas/product.schema';
 
 const router = Router();
 const productController = new ProductController();
 
 // Public endpoint - no auth required for QR code scanning
-router.post('/qr/scan', (req, res) => {
+router.post('/qr/scan', (_req: Request, res: Response) => {
   // This will be handled by the QR controller
   res.status(404).json({ success: false, message: 'QR scanning endpoint moved to /api/qr/scan' });
 });
@@ -29,7 +32,64 @@ router.post('/qr/scan', (req, res) => {
 router.use(authenticateToken);
 router.use(authorizeBusinessAccess);
 
-// Product management routes
+// ==================== CATEGORY ROUTES ====================
+
+router.get(
+  '/categories',
+  authorizeRole('RETAIL_OWNER', 'MANAGER', 'CASHIER', 'VIEWER'),
+  (req, res) => productController.getCategories(req, res)
+);
+
+router.post(
+  '/categories',
+  authorizeRole('RETAIL_OWNER', 'MANAGER'),
+  validateBody(createCategorySchema),
+  (req, res) => productController.createCategory(req, res)
+);
+
+router.put(
+  '/categories/:categoryId',
+  authorizeRole('RETAIL_OWNER', 'MANAGER'),
+  validateBody(updateCategorySchema),
+  (req, res) => productController.updateCategory(req, res)
+);
+
+router.delete(
+  '/categories/:categoryId',
+  authorizeRole('RETAIL_OWNER', 'MANAGER'),
+  (req, res) => productController.deleteCategory(req, res)
+);
+
+// ==================== VARIANT ROUTES ====================
+
+router.get(
+  '/:productId/variants',
+  authorizeRole('RETAIL_OWNER', 'MANAGER', 'CASHIER', 'VIEWER'),
+  (req, res) => productController.getVariants(req, res)
+);
+
+router.post(
+  '/:productId/variants',
+  authorizeRole('RETAIL_OWNER', 'MANAGER'),
+  validateBody(createVariantSchema),
+  (req, res) => productController.createVariant(req, res)
+);
+
+router.put(
+  '/:productId/variants/:variantId',
+  authorizeRole('RETAIL_OWNER', 'MANAGER'),
+  validateBody(createVariantSchema.partial()),
+  (req, res) => productController.updateVariant(req, res)
+);
+
+router.delete(
+  '/:productId/variants/:variantId',
+  authorizeRole('RETAIL_OWNER', 'MANAGER'),
+  (req, res) => productController.deleteVariant(req, res)
+);
+
+// ==================== PRODUCT ROUTES ====================
+
 router.post(
   '/',
   authorizeRole('RETAIL_OWNER', 'MANAGER'),

@@ -15,6 +15,7 @@ export interface AuthenticatedRequest extends Request {
     role: string;
     businessId?: string;
     staffId?: string;
+    permissions?: string[];
   };
   businessId?: string;
 }

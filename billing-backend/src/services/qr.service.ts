@@ -11,7 +11,7 @@ import { Request } from 'express';
 const auditService = new AuditService();
 
 export class QrService {
-  async generateBatch(businessId: string, userId: string, input: GenerateQrBatchInput, req?: Request) {
+  async generateBatch(businessId: string, userId: string, input: GenerateQrBatchInput, req?: Request): Promise<{ batch: typeof qrCodeBatches.$inferSelect; codes: string[] }> {
     const { productId, batchName, quantity, purpose, notes, expiryDate } = input;
 
     // Verify product if provided
@@ -47,6 +47,10 @@ export class QrService {
       })
       .returning();
 
+    if (!batch) {
+      throw new Error('Failed to create QR batch');
+    }
+
     // Generate codes
     const codes: string[] = [];
     for (let i = 0; i < quantity; i++) {
@@ -64,7 +68,7 @@ export class QrService {
         codes.push(qrDataUrl);
     }
 
-    await auditService.logBusinessAction(businessId, userId, 'QR_BATCH_CREATE', 'QR_CODE', batch.id, { batchName, quantity }, req);
+    await auditService.logBusinessAction('QR_BATCH_CREATE', businessId, userId, batch.id, undefined, { batchName, quantity }, req);
     logger.info('QR Batch created', { batchId: batch.id, businessId, quantity });
 
     return {
@@ -73,7 +77,7 @@ export class QrService {
     };
   }
 
-  async getBatches(businessId: string, productId?: string) {
+  async getBatches(businessId: string, productId?: string): Promise<typeof qrCodeBatches.$inferSelect[]> {
     const conditions = productId
       ? and(eq(qrCodeBatches.businessId, businessId), eq(qrCodeBatches.productId, productId))
       : eq(qrCodeBatches.businessId, businessId);

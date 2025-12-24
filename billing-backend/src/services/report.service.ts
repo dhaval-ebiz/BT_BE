@@ -11,7 +11,7 @@ import { and, eq, sql, between, desc } from 'drizzle-orm';
 export class ReportService {
 
   // ==================== SALES REPORT ====================
-  async getSalesReport(businessId: string, startDate: Date, endDate: Date, granularity: 'DAY' | 'WEEK' | 'MONTH' = 'DAY') {
+  async getSalesReport(businessId: string, startDate: Date, endDate: Date, granularity: 'DAY' | 'WEEK' | 'MONTH' = 'DAY'): Promise<{ summary: { totalRevenue: number; totalBills: number; totalTax: number }; breakdown: unknown[] }> {
     // Determine the date truncation part based on granularity
     let datePart = 'day';
     if (granularity === 'WEEK') datePart = 'week';
@@ -49,7 +49,7 @@ export class ReportService {
     };
   }
 
-  async getTopSellingProducts(businessId: string, startDate: Date, endDate: Date, limit: number = 5) {
+  async getTopSellingProducts(businessId: string, startDate: Date, endDate: Date, limit: number = 5): Promise<unknown[]> {
     return await db
       .select({
         productId: billItems.productId,
@@ -72,7 +72,7 @@ export class ReportService {
   }
 
   // ==================== INVENTORY REPORT ====================
-  async getInventoryValuation(businessId: string) {
+  async getInventoryValuation(businessId: string): Promise<{ totalValuation: number; totalItems: number; breakdown: unknown[] }> {
     // Current stock valuation based on product variants
     // Valuation = Stock Quantity * Purchase Price (Average Cost ideally, but using purchasePrice from variant for now)
 
@@ -104,7 +104,7 @@ export class ReportService {
     };
   }
 
-  async getLowStockAlerts(businessId: string) {
+  async getLowStockAlerts(businessId: string): Promise<unknown[]> {
     return await db
       .select({
         productId: products.id,
@@ -125,7 +125,7 @@ export class ReportService {
   }
 
   // ==================== PROFIT & LOSS ====================
-  async getProfitLoss(businessId: string, startDate: Date, endDate: Date) {
+  async getProfitLoss(businessId: string, startDate: Date, endDate: Date): Promise<{ revenue: number; discounts: number; cogs: number; grossProfit: number; grossMargin: number; operatingExpenses: number; netProfit: number; netMargin: number }> {
     // 1. Revenue (Sales)
     const revenueResult = await db
       .select({
@@ -198,7 +198,7 @@ export class ReportService {
   }
 
   // ==================== TAX REPORT ====================
-  async getTaxReport(businessId: string, startDate: Date, endDate: Date) {
+  async getTaxReport(businessId: string, startDate: Date, endDate: Date): Promise<{ totalOutputTax: number; totalTaxableRevenue: number; breakdown: unknown[] }> {
     // 1. Output Tax (Collected from Sales)
     // We get total tax collected, and can also break it down by rate if needed.
     // For now, let's just get total Tax from bills.

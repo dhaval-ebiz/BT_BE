@@ -70,11 +70,11 @@ export function getPaginationParams(req: Request): PaginationOptions {
   };
 }
 
-export function buildOrderByClause(sortBy: string, sortOrder: 'asc' | 'desc' = 'asc') {
+export function buildOrderByClause(sortBy: string, sortOrder: 'asc' | 'desc' = 'asc'): string {
   return sortOrder === 'desc' ? `-${sortBy}` : sortBy;
 }
 
-export function createFilterConditions(searchFields: string[], searchTerm?: string) {
+export function createFilterConditions(searchFields: string[], searchTerm?: string): Record<string, unknown> {
   if (!searchTerm) return {};
   
   const orConditions = searchFields.map(field => ({

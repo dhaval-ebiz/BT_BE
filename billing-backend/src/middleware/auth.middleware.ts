@@ -114,13 +114,44 @@ export const authorizeRole = (...allowedRoles: string[]) => {
   };
 };
 
+/**
+ * Middleware to authorize super admin access
+ * Super admins have platform-wide access to all businesses and system features
+ */
+export const authorizeSuperAdmin = (
+  req: AuthenticatedRequest,
+  res: Response,
+  next: NextFunction
+): void => {
+  if (!req.user) {
+    res.status(401).json({
+      success: false,
+      message: 'Authentication required',
+    });
+    return;
+  }
+
+  if (req.user.role !== 'SUPER_ADMIN') {
+    res.status(403).json({
+      success: false,
+      message: 'Super admin access required',
+    });
+    return;
+  }
+
+  next();
+};
+
 export const authorizeBusinessAccess = async (
   req: BusinessRequest,
   res: Response,
   next: NextFunction
 ): Promise<void> => {
   try {
-    const businessId = req.params.businessId || req.body.businessId || req.query.businessId;
+    const params = req.params as Record<string, string>;
+    const body = req.body as Record<string, string>;
+    const query = req.query as Record<string, string>;
+    const businessId = params.businessId || body.businessId || query.businessId;
     
     if (!businessId) {
       res.status(400).json({
@@ -145,6 +176,9 @@ export const authorizeBusinessAccess = async (
         name: '',
         ownerId: ''
       };
+      // Super admin implicitly has all permissions? 
+      // Ideally yes, but for now we might leave it undefined or fetch all.
+      // Let's assume Resource Auth handles Super Admin bypass separately (it does).
       return next();
     }
 
@@ -170,6 +204,16 @@ export const authorizeBusinessAccess = async (
         ownerId: business.ownerId
       };
       req.user.businessId = businessId;
+      
+      // Fetch permissions for Owner (likely ALL permissions)
+      try {
+        req.user.permissions = await permissionService.getUserPermissions(req.user.id, businessId);
+      } catch (permError) {
+        logger.error('Failed to load owner permissions', { error: permError });
+        res.status(500).json({ success: false, message: 'Authorization error' });
+        return;
+      }
+      
       return next();
     }
 
@@ -200,6 +244,15 @@ export const authorizeBusinessAccess = async (
       ownerId: business.ownerId
     };
     req.user.businessId = businessId;
+
+    // Fetch permissions for Staff
+    try {
+      req.user.permissions = await permissionService.getUserPermissions(req.user.id, businessId);
+    } catch (permError) {
+        logger.error('Failed to load staff permissions', { error: permError });
+        res.status(500).json({ success: false, message: 'Authorization error' });
+        return;
+    }
 
     next();
   } catch (error) {
@@ -301,7 +354,7 @@ export const optionalAuth = async (
   }
 };
 
-export const rateLimitByUser = (maxRequests: number, windowMs: number) => {
+export const rateLimitByUser = (maxRequests: number, windowMs: number): ((req: AuthenticatedRequest, res: Response, next: NextFunction) => void) => {
   const requests = new Map<string, { count: number; resetTime: number }>();
 
   return (req: AuthenticatedRequest, res: Response, next: NextFunction): void => {

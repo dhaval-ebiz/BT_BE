@@ -1,7 +1,13 @@
-import { Request, Response } from 'express';
+import { Response } from 'express';
 import { MoneyManagementService } from '../services/money-management.service';
 import { logger } from '../utils/logger';
 import { z } from 'zod';
+import { AuthenticatedRequest } from '../types/common';
+
+function getErrorMessage(error: unknown): string {
+  if (error instanceof Error) return error.message;
+  return 'Unknown error';
+}
 
 const moneyService = new MoneyManagementService();
 
@@ -40,10 +46,18 @@ export class MoneyManagementController {
   /**
    * Deposit money to customer account
    */
-  async depositMoney(req: Request, res: Response) {
+  async depositMoney(req: AuthenticatedRequest, res: Response): Promise<void> {
     try {
       const { businessId } = req.params;
-      const userId = req.user!.id;
+      if (!businessId) {
+        res.status(400).json({ success: false, message: 'Business ID is required' });
+        return;
+      }
+      if (!req.user) {
+        res.status(401).json({ success: false, message: 'Unauthorized' });
+        return;
+      }
+      const userId = req.user.id;
       const data = depositSchema.parse(req.body);
 
       const result = await moneyService.depositMoney(businessId, userId, data);
@@ -59,7 +73,7 @@ export class MoneyManagementController {
       res.status(400).json({
         success: false,
         message: 'Failed to deposit money',
-        error: error instanceof Error ? error.message : 'Unknown error',
+        error: getErrorMessage(error),
       });
     }
   }
@@ -67,10 +81,18 @@ export class MoneyManagementController {
   /**
    * Withdraw money from customer account
    */
-  async withdrawMoney(req: Request, res: Response) {
+  async withdrawMoney(req: AuthenticatedRequest, res: Response): Promise<void> {
     try {
       const { businessId } = req.params;
-      const userId = req.user!.id;
+      if (!businessId) {
+        res.status(400).json({ success: false, message: 'Business ID is required' });
+        return;
+      }
+      if (!req.user) {
+        res.status(401).json({ success: false, message: 'Unauthorized' });
+        return;
+      }
+      const userId = req.user.id;
       const data = withdrawSchema.parse(req.body);
 
       const result = await moneyService.withdrawMoney(businessId, userId, data);
@@ -86,7 +108,7 @@ export class MoneyManagementController {
       res.status(400).json({
         success: false,
         message: 'Failed to withdraw money',
-        error: error instanceof Error ? error.message : 'Unknown error',
+        error: getErrorMessage(error),
       });
     }
   }
@@ -94,10 +116,18 @@ export class MoneyManagementController {
   /**
    * Transfer money between customer accounts
    */
-  async transferMoney(req: Request, res: Response) {
+  async transferMoney(req: AuthenticatedRequest, res: Response): Promise<void> {
     try {
       const { businessId } = req.params;
-      const userId = req.user!.id;
+      if (!businessId) {
+        res.status(400).json({ success: false, message: 'Business ID is required' });
+        return;
+      }
+      if (!req.user) {
+        res.status(401).json({ success: false, message: 'Unauthorized' });
+        return;
+      }
+      const userId = req.user.id;
       const data = transferSchema.parse(req.body);
 
       const result = await moneyService.transferMoney(businessId, userId, data);
@@ -113,7 +143,7 @@ export class MoneyManagementController {
       res.status(400).json({
         success: false,
         message: 'Failed to transfer money',
-        error: error instanceof Error ? error.message : 'Unknown error',
+        error: getErrorMessage(error),
       });
     }
   }
@@ -121,9 +151,17 @@ export class MoneyManagementController {
   /**
    * Get customer money history
    */
-  async getCustomerMoneyHistory(req: Request, res: Response) {
+  async getCustomerMoneyHistory(req: AuthenticatedRequest, res: Response): Promise<void> {
     try {
       const { businessId, customerId } = req.params;
+      if (!businessId || !customerId) {
+        res.status(400).json({ success: false, message: 'Business ID and Customer ID are required' });
+        return;
+      }
+      if (!req.user) {
+        res.status(401).json({ success: false, message: 'Unauthorized' });
+        return;
+      }
       const query = historyQuerySchema.parse(req.query);
       
       const limit = parseInt(query.limit || '50');
@@ -133,7 +171,7 @@ export class MoneyManagementController {
 
       const result = await moneyService.getCustomerMoneyHistory(
         businessId,
-        req.user!.id,
+        req.user.id,
         customerId,
         limit,
         offset,
@@ -151,7 +189,7 @@ export class MoneyManagementController {
       res.status(500).json({
         success: false,
         message: 'Failed to get customer money history',
-        error: error instanceof Error ? error.message : 'Unknown error',
+        error: getErrorMessage(error),
       });
     }
   }
@@ -159,11 +197,19 @@ export class MoneyManagementController {
   /**
    * Get business money summary
    */
-  async getBusinessMoneySummary(req: Request, res: Response) {
+  async getBusinessMoneySummary(req: AuthenticatedRequest, res: Response): Promise<void> {
     try {
       const { businessId } = req.params;
+      if (!businessId) {
+        res.status(400).json({ success: false, message: 'Business ID is required' });
+        return;
+      }
+      if (!req.user) {
+        res.status(401).json({ success: false, message: 'Unauthorized' });
+        return;
+      }
       
-      const result = await moneyService.getBusinessMoneySummary(businessId, req.user!.id);
+      const result = await moneyService.getBusinessMoneySummary(businessId, req.user.id);
 
       res.json({
         success: true,
@@ -175,7 +221,7 @@ export class MoneyManagementController {
       res.status(500).json({
         success: false,
         message: 'Failed to get business money summary',
-        error: error instanceof Error ? error.message : 'Unknown error',
+        error: getErrorMessage(error),
       });
     }
   }

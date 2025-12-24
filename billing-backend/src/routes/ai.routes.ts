@@ -1,25 +1,16 @@
 import { Router } from 'express';
 import { AIController } from '../controllers/ai.controller';
 import { authenticateToken, authorizeBusinessAccess } from '../middleware/auth.middleware';
-import multer from 'multer';
+// import multer from 'multer';
 
 const router = Router();
 const aiController = new AIController();
 
 // Configure multer for file uploads
-const _upload = multer({
-  dest: 'uploads/temp/',
-  limits: {
-    fileSize: 5 * 1024 * 1024, // 5MB limit
-  },
-  fileFilter: (req, file, cb) => {
-    if (file.mimetype.startsWith('image/')) {
-      cb(null, true);
-    } else {
-      cb(new Error('Only image files are allowed'));
-    }
-  },
-});
+// Configure multer for file uploads
+// const _upload = multer({ ... }) - Unused currently
+// Multer configuration moved or unused
+// const _upload = ...
 
 /**
  * @swagger

@@ -31,7 +31,7 @@ export class RoleService {
     name: string,
     description: string,
     rolePermissions: PermissionInput[]
-  ) {
+  ): Promise<typeof roles.$inferSelect> {
     try {
       // Create role
       const [newRole] = await db
@@ -75,7 +75,7 @@ export class RoleService {
   /**
    * Get all roles for a business
    */
-  async getRoles(businessId: string) {
+  async getRoles(businessId: string): Promise<typeof roles.$inferSelect[]> {
     try {
       const businessRoles = await db
         .select()
@@ -105,7 +105,7 @@ export class RoleService {
   /**
    * Get role details with permissions
    */
-  async getRoleDetails(roleId: string) {
+  async getRoleDetails(roleId: string): Promise<typeof roles.$inferSelect & { permissions: typeof permissions.$inferSelect[] }> {
     try {
       const [role] = await db
         .select()
@@ -141,7 +141,7 @@ export class RoleService {
         description?: string;
         permissions?: PermissionInput[];
     }
-  ) {
+  ): Promise<typeof roles.$inferSelect & { permissions: typeof permissions.$inferSelect[] }> {
     try {
       const [existingRole] = await db
         .select()
@@ -203,7 +203,7 @@ export class RoleService {
   /**
    * Delete a custom role
    */
-  async deleteRole(businessId: string, userId: string, roleId: string) {
+  async deleteRole(businessId: string, userId: string, roleId: string): Promise<{ message: string }> {
       try {
         const [existingRole] = await db
             .select()

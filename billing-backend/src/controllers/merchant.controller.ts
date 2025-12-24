@@ -1,5 +1,4 @@
-import { Request, Response } from 'express';
-import { getErrorMessage } from '../utils/errors';
+import { Response } from 'express';
 import { MerchantService } from '../services/merchant.service';
 import { 
   CreateMerchantInput, 
@@ -8,23 +7,32 @@ import {
   MerchantPaymentInput 
 } from '../schemas/merchant.schema';
 import { logger, logApiRequest } from '../utils/logger';
+import { AuthenticatedRequest } from '../types/common';
 
 const merchantService = new MerchantService();
 
+function getErrorMessage(error: unknown): string {
+  if (error instanceof Error) {
+    return error.message;
+  }
+  return String(error);
+}
+
 export class MerchantController {
-  async createMerchant(req: Request, res: Response) {
+  async createMerchant(req: AuthenticatedRequest, res: Response): Promise<void> {
     const startTime = Date.now();
     
     try {
-      const businessId = req.user?.businessId || req.body.businessId;
+      const businessId = req.user?.businessId || (req.body as { businessId?: string }).businessId;
       if (!businessId) {
-        return res.status(400).json({
+        res.status(400).json({
           success: false,
           message: 'Business ID is required',
         });
+        return;
       }
 
-      const input: CreateMerchantInput = req.body;
+      const input = req.body as CreateMerchantInput;
       const merchant = await merchantService.createMerchant(businessId, input);
       
       logApiRequest(req, res, Date.now() - startTime);
@@ -39,23 +47,28 @@ export class MerchantController {
       
       res.status(400).json({
         success: false,
-        message: error.message || 'Merchant creation failed',
+        message: getErrorMessage(error) || 'Merchant creation failed',
       });
     }
   }
 
-  async getMerchant(req: Request, res: Response) {
+  async getMerchant(req: AuthenticatedRequest, res: Response): Promise<void> {
     const startTime = Date.now();
     
     try {
       const businessId = req.user?.businessId || req.query.businessId as string;
       const merchantId = req.params.merchantId;
+      if (!merchantId) {
+        res.status(400).json({ success: false, message: 'Merchant ID is required' });
+        return;
+      }
       
       if (!businessId) {
-        return res.status(400).json({
+        res.status(400).json({
           success: false,
           message: 'Business ID is required',
         });
+        return;
       }
 
       const merchant = await merchantService.getMerchant(businessId, merchantId);
@@ -72,26 +85,31 @@ export class MerchantController {
       
       res.status(404).json({
         success: false,
-        message: error.message || 'Merchant not found',
+        message: getErrorMessage(error) || 'Merchant not found',
       });
     }
   }
 
-  async updateMerchant(req: Request, res: Response) {
+  async updateMerchant(req: AuthenticatedRequest, res: Response): Promise<void> {
     const startTime = Date.now();
     
     try {
       const businessId = req.user?.businessId || req.query.businessId as string;
       const merchantId = req.params.merchantId;
+      if (!merchantId) {
+        res.status(400).json({ success: false, message: 'Merchant ID is required' });
+        return;
+      }
       
       if (!businessId) {
-        return res.status(400).json({
+        res.status(400).json({
           success: false,
           message: 'Business ID is required',
         });
+        return;
       }
 
-      const input: UpdateMerchantInput = req.body;
+      const input = req.body as UpdateMerchantInput;
       const merchant = await merchantService.updateMerchant(businessId, merchantId, input);
       
       logApiRequest(req, res, Date.now() - startTime);
@@ -106,23 +124,28 @@ export class MerchantController {
       
       res.status(400).json({
         success: false,
-        message: error.message || 'Merchant update failed',
+        message: getErrorMessage(error) || 'Merchant update failed',
       });
     }
   }
 
-  async deleteMerchant(req: Request, res: Response) {
+  async deleteMerchant(req: AuthenticatedRequest, res: Response): Promise<void> {
     const startTime = Date.now();
     
     try {
       const businessId = req.user?.businessId || req.query.businessId as string;
       const merchantId = req.params.merchantId;
+      if (!merchantId) {
+        res.status(400).json({ success: false, message: 'Merchant ID is required' });
+        return;
+      }
       
       if (!businessId) {
-        return res.status(400).json({
+        res.status(400).json({
           success: false,
           message: 'Business ID is required',
         });
+        return;
       }
 
       const result = await merchantService.deleteMerchant(businessId, merchantId);
@@ -139,25 +162,26 @@ export class MerchantController {
       
       res.status(400).json({
         success: false,
-        message: error.message || 'Merchant deletion failed',
+        message: getErrorMessage(error) || 'Merchant deletion failed',
       });
     }
   }
 
-  async getMerchants(req: Request, res: Response) {
+  async getMerchants(req: AuthenticatedRequest, res: Response): Promise<void> {
     const startTime = Date.now();
     
     try {
       const businessId = req.user?.businessId || req.query.businessId as string;
       
       if (!businessId) {
-        return res.status(400).json({
+        res.status(400).json({
           success: false,
           message: 'Business ID is required',
         });
+        return;
       }
 
-      const query: MerchantQueryInput = req.query;
+      const query = req.query as unknown as MerchantQueryInput;
       const result = await merchantService.getMerchants(businessId, query);
       
       logApiRequest(req, res, Date.now() - startTime);
@@ -172,27 +196,32 @@ export class MerchantController {
       
       res.status(400).json({
         success: false,
-        message: error.message || 'Failed to fetch merchants',
+        message: getErrorMessage(error) || 'Failed to fetch merchants',
       });
     }
   }
 
-  async addMerchantPayment(req: Request, res: Response) {
+  async addMerchantPayment(req: AuthenticatedRequest, res: Response): Promise<void> {
     const startTime = Date.now();
     
     try {
       const businessId = req.user?.businessId || req.query.businessId as string;
       const merchantId = req.params.merchantId;
+      if (!merchantId) {
+        res.status(400).json({ success: false, message: 'Merchant ID is required' });
+        return;
+      }
       const userId = req.user?.id || '';
       
       if (!businessId) {
-        return res.status(400).json({
+        res.status(400).json({
           success: false,
           message: 'Business ID is required',
         });
+        return;
       }
 
-      const input: MerchantPaymentInput = req.body;
+      const input = req.body as MerchantPaymentInput;
       const payment = await merchantService.addMerchantPayment(businessId, merchantId, userId, input);
       
       logApiRequest(req, res, Date.now() - startTime);
@@ -207,25 +236,30 @@ export class MerchantController {
       
       res.status(400).json({
         success: false,
-        message: error.message || 'Payment addition failed',
+        message: getErrorMessage(error) || 'Payment addition failed',
       });
     }
   }
 
-  async getMerchantPayments(req: Request, res: Response) {
+  async getMerchantPayments(req: AuthenticatedRequest, res: Response): Promise<void> {
     const startTime = Date.now();
     
     try {
       const businessId = req.user?.businessId || req.query.businessId as string;
       const merchantId = req.params.merchantId;
+      if (!merchantId) {
+        res.status(400).json({ success: false, message: 'Merchant ID is required' });
+        return;
+      }
       const page = parseInt(req.query.page as string) || 1;
       const limit = parseInt(req.query.limit as string) || 20;
       
       if (!businessId) {
-        return res.status(400).json({
+        res.status(400).json({
           success: false,
           message: 'Business ID is required',
         });
+        return;
       }
 
       const result = await merchantService.getMerchantPayments(businessId, merchantId, page, limit);
@@ -242,22 +276,23 @@ export class MerchantController {
       
       res.status(404).json({
         success: false,
-        message: error.message || 'Merchant not found',
+        message: getErrorMessage(error) || 'Merchant not found',
       });
     }
   }
 
-  async getMerchantStats(req: Request, res: Response) {
+  async getMerchantStats(req: AuthenticatedRequest, res: Response): Promise<void> {
     const startTime = Date.now();
     
     try {
       const businessId = req.user?.businessId || req.query.businessId as string;
       
       if (!businessId) {
-        return res.status(400).json({
+        res.status(400).json({
           success: false,
           message: 'Business ID is required',
         });
+        return;
       }
 
       const stats = await merchantService.getMerchantStats(businessId);
@@ -274,7 +309,7 @@ export class MerchantController {
       
       res.status(500).json({
         success: false,
-        message: error.message || 'Failed to fetch merchant statistics',
+        message: getErrorMessage(error) || 'Failed to fetch merchant statistics',
       });
     }
   }

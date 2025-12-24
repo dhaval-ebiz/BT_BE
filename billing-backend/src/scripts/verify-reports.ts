@@ -1,7 +1,7 @@
 import { ReportService } from '../services/report.service';
 import { db } from '../config/database';
 
-async function verifyReports() {
+async function verifyReports(): Promise<void> {
   console.log('Starting Report Verification...');
   const reportService = new ReportService();
   

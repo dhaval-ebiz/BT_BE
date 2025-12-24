@@ -184,7 +184,7 @@ router.get('/matrix', permissionController.getPermissionMatrix);
  *                   format: date-time
  */
 router.post('/:businessId/staff/assign-role', 
-  authorizeRole(['RETAIL_OWNER', 'SUPER_ADMIN']), 
+  authorizeRole('RETAIL_OWNER', 'SUPER_ADMIN'), 
   permissionController.assignStaffRole
 );
 
@@ -236,7 +236,7 @@ router.post('/:businessId/staff/assign-role',
  *                   format: date-time
  */
 router.post('/:businessId/staff/remove', 
-  authorizeRole(['RETAIL_OWNER', 'SUPER_ADMIN']), 
+  authorizeRole('RETAIL_OWNER', 'SUPER_ADMIN'), 
   permissionController.removeStaffMember
 );
 
@@ -275,7 +275,7 @@ router.post('/:businessId/staff/remove',
  *                   format: date-time
  */
 router.get('/:businessId/staff', 
-  authorizeRole(['RETAIL_OWNER', 'SUPER_ADMIN']), 
+  authorizeRole('RETAIL_OWNER', 'SUPER_ADMIN'), 
   permissionController.getBusinessStaff
 );
 

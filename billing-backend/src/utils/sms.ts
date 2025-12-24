@@ -79,8 +79,9 @@ export async function testSMSConnection(): Promise<boolean> {
       return false;
     }
     
-    // Try to fetch account info to verify connection
-    await twilioClient.accounts(accountSid!).fetch();
+    // Try to fetch messages to verify connection
+    if (!accountSid) throw new Error('Twilio Account SID missing');
+    await twilioClient.messages.list({ limit: 1 });
     logger.info('SMS service connection verified');
     return true;
   } catch (error) {

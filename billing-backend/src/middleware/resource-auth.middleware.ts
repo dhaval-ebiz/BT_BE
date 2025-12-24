@@ -23,24 +23,28 @@ export interface ResourceAuthOptions {
   requiredPermission?: string;
 }
 
-export function authorizeResourceAccess(options: ResourceAuthOptions) {
+export function authorizeResourceAccess(options: ResourceAuthOptions): (req: BusinessRequest, res: Response, next: NextFunction) => Promise<void> {
   return async (req: BusinessRequest, res: Response, next: NextFunction) => {
     try {
-      const resourceId = req.params[options.resourceIdParam || 'id'] || 
-                        req.body[options.resourceIdBody || 'id'];
+      const params = req.params as Record<string, string>;
+      const body = req.body as Record<string, string>;
+      const resourceId = params[options.resourceIdParam || 'id'] || 
+                        body[options.resourceIdBody || 'id'];
       
       if (!resourceId) {
-        return res.status(400).json({
+        res.status(400).json({
           success: false,
           message: `${options.resourceType} ID is required`,
         });
+        return;
       }
 
       if (!req.user || !req.business) {
-        return res.status(401).json({
+        res.status(401).json({
           success: false,
           message: 'Authentication and business authorization required',
         });
+        return;
       }
 
       // Super admin bypass
@@ -70,10 +74,11 @@ export function authorizeResourceAccess(options: ResourceAuthOptions) {
             req
           );
 
-          return res.status(403).json({
+          res.status(403).json({
             success: false,
             message: `Access denied. Required permission: ${options.requiredPermission}`,
           });
+          return;
         }
       }
 
@@ -98,16 +103,17 @@ export function authorizeResourceAccess(options: ResourceAuthOptions) {
           req
         );
 
-        return res.status(403).json({
+        res.status(403).json({
           success: false,
           message: `Access denied. ${options.resourceType} not found or access restricted.`,
         });
+        return;
       }
 
       next();
     } catch (error) {
       logger.error('Resource authorization error:', error);
-      return res.status(500).json({
+      res.status(500).json({
         success: false,
         message: 'Authorization failed',
       });
@@ -196,7 +202,7 @@ export const authorizeCustomerAccess = (options?: {
   allowSuperAdmin?: boolean;
   allowBusinessOwner?: boolean;
   requiredPermission?: string;
-}) => {
+}): (req: BusinessRequest, res: Response, next: NextFunction) => Promise<void> => {
   return authorizeResourceAccess({
     resourceType: 'CUSTOMER',
     allowSuperAdmin: options?.allowSuperAdmin,
@@ -209,7 +215,7 @@ export const authorizeMerchantAccess = (options?: {
   allowSuperAdmin?: boolean;
   allowBusinessOwner?: boolean;
   requiredPermission?: string;
-}) => {
+}): (req: BusinessRequest, res: Response, next: NextFunction) => Promise<void> => {
   return authorizeResourceAccess({
     resourceType: 'MERCHANT',
     allowSuperAdmin: options?.allowSuperAdmin,
@@ -222,7 +228,7 @@ export const authorizeProductAccess = (options?: {
   allowSuperAdmin?: boolean;
   allowBusinessOwner?: boolean;
   requiredPermission?: string;
-}) => {
+}): (req: BusinessRequest, res: Response, next: NextFunction) => Promise<void> => {
   return authorizeResourceAccess({
     resourceType: 'PRODUCT',
     allowSuperAdmin: options?.allowSuperAdmin,
@@ -235,7 +241,7 @@ export const authorizeBillAccess = (options?: {
   allowSuperAdmin?: boolean;
   allowBusinessOwner?: boolean;
   requiredPermission?: string;
-}) => {
+}): (req: BusinessRequest, res: Response, next: NextFunction) => Promise<void> => {
   return authorizeResourceAccess({
     resourceType: 'BILL',
     allowSuperAdmin: options?.allowSuperAdmin,
@@ -248,7 +254,7 @@ export const authorizePaymentAccess = (options?: {
   allowSuperAdmin?: boolean;
   allowBusinessOwner?: boolean;
   requiredPermission?: string;
-}) => {
+}): (req: BusinessRequest, res: Response, next: NextFunction) => Promise<void> => {
   return authorizeResourceAccess({
     resourceType: 'PAYMENT',
     allowSuperAdmin: options?.allowSuperAdmin,
@@ -258,15 +264,19 @@ export const authorizePaymentAccess = (options?: {
 };
 
 // Middleware to check if user can access their own data
-export function authorizeOwnDataAccess(req: BusinessRequest, res: Response, next: NextFunction) {
+export function authorizeOwnDataAccess(req: BusinessRequest, res: Response, next: NextFunction): void {
+
   const userId = req.user?.id;
-  const requestedUserId = req.params.userId || req.body.userId;
+  const params = req.params as Record<string, string>;
+  const body = req.body as Record<string, string>;
+  const requestedUserId = params.userId || body.userId;
 
   if (!userId || !requestedUserId) {
-    return res.status(400).json({
+    res.status(400).json({
       success: false,
       message: 'User ID is required',
     });
+    return;
   }
 
   // Users can always access their own data
@@ -284,7 +294,7 @@ export function authorizeOwnDataAccess(req: BusinessRequest, res: Response, next
     return next();
   }
 
-  return res.status(403).json({
+  res.status(403).json({
     success: false,
     message: 'Access denied. You can only access your own data.',
   });

@@ -1,7 +1,7 @@
 import { Request, Response } from 'express';
 import { logger } from '../utils/logger';
 
-export const notFoundHandler = (req: Request, res: Response) => {
+export const notFoundHandler = (req: Request, res: Response): void => {
   logger.warn('Route not found', {
     method: req.method,
     url: req.url,

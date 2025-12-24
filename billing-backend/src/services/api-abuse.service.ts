@@ -101,8 +101,8 @@ export class ApiAbuseService {
       if (count >= limit) {
         // Get oldest request timestamp for reset time
         const oldestRequests = await redis.zrange(key, 0, 0, 'WITHSCORES');
-        const resetTime = oldestRequests.length > 0 
-          ? new Date(oldestRequests[1] + window)
+        const resetTime = oldestRequests.length > 1 
+          ? new Date(Number(oldestRequests[1]) + window)
           : new Date(now + window);
         
         return {

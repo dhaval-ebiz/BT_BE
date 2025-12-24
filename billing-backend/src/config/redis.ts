@@ -27,7 +27,7 @@ redis.on('ready', () => {
   console.log('✅ Redis ready');
 });
 
-export async function testRedisConnection() {
+export async function testRedisConnection(): Promise<void> {
   try {
     await redis.ping();
     console.log('✅ Redis connection test passed');
@@ -37,7 +37,7 @@ export async function testRedisConnection() {
   }
 }
 
-export async function closeRedisConnection() {
+export async function closeRedisConnection(): Promise<void> {
   await redis.disconnect();
   await redisPub.disconnect();
   await redisSub.disconnect();

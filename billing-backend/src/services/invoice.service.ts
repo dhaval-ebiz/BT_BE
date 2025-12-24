@@ -85,10 +85,10 @@ export class InvoiceService {
     const items: InvoiceItem[] = (bill as unknown as BillWithRelations).items || [];
     
     for (const item of items) {
-        doc.text(item.productName, 50, y);
-        doc.text(item.quantity, 250, y, { width: 50, align: 'right' });
-        doc.text(item.rate, 300, y, { width: 70, align: 'right' });
-        doc.text(item.totalAmount, 400, y, { width: 70, align: 'right' });
+        doc.text(String(item.productName), 50, y);
+        doc.text(String(item.quantity), 250, y, { width: 50, align: 'right' });
+        doc.text(String(item.rate), 300, y, { width: 70, align: 'right' });
+        doc.text(String(item.totalAmount), 400, y, { width: 70, align: 'right' });
         y += 20;
     }
     

@@ -3,10 +3,17 @@ import path from 'path';
 import { logger } from '../utils/logger';
 import { uploadToS3, deleteFromS3, getSignedUrl } from '../utils/s3';
 // import { files } from '../models/drizzle/schema'; // If we track files in DB
+export interface FileUploadResult {
+  key: string;
+  url: string;
+  mimetype: string;
+  size: number;
+  provider: 'S3' | 'LOCAL';
+}
 
 export class FileService {
   
-  async uploadFile(file: Express.Multer.File, businessId: string, userId: string, folder?: string): Promise<any> {
+  async uploadFile(file: Express.Multer.File, businessId: string, userId: string, folder?: string): Promise<FileUploadResult> {
     try {
       // For now, we are using local storage as per routes configuration (uploads/)
       // In a real prod env, we might want to move this to S3 immediately
@@ -47,7 +54,7 @@ export class FileService {
     }
   }
 
-  async uploadMultipleFiles(files: Express.Multer.File[], businessId: string, userId: string): Promise<any[]> {
+  async uploadMultipleFiles(files: Express.Multer.File[], businessId: string, userId: string): Promise<(FileUploadResult | { success: boolean; error?: string })[]> {
     const results = [];
     for (const file of files) {
       try {
@@ -60,7 +67,7 @@ export class FileService {
     return results;
   }
 
-  async getFile(key: string, businessId: string): Promise<string> {
+  async getFile(key: string, _businessId: string): Promise<string> {
     // If S3
     if (process.env.AWS_ACCESS_KEY_ID) {
       return await getSignedUrl(key);
@@ -82,7 +89,7 @@ export class FileService {
     }
   }
 
-  async deleteFile(key: string, businessId: string): Promise<boolean> {
+  async deleteFile(key: string, _businessId: string): Promise<boolean> {
       if (process.env.AWS_ACCESS_KEY_ID) {
           await deleteFromS3(key);
           return true;

@@ -13,6 +13,7 @@ import { notFoundHandler } from './middleware/not-found.middleware';
 import { performanceMonitor, apiMetrics, securityMetrics } from './middleware/performance.middleware';
 import { generalRateLimit } from './middleware/rate-limit.middleware';
 import { authRoutes } from './routes/auth.routes';
+import { adminRoutes } from './routes/admin.routes';
 import { businessRoutes } from './routes/business.routes';
 import { customerRoutes } from './routes/customer.routes';
 import { merchantRoutes } from './routes/merchant.routes';
@@ -75,7 +76,7 @@ app.use(securityMetrics);
 app.use(generalRateLimit);
 
 // Health check endpoint
-app.get('/health', (req, res) => {
+app.get('/health', (_req, res) => {
   res.status(200).json({
     success: true,
     message: 'Server is healthy',
@@ -90,6 +91,7 @@ app.use('/api-docs', swaggerUi.serve, swaggerUi.setup(swaggerSpec));
 
 // API routes
 app.use('/api/auth', authRoutes);
+app.use('/api/admin', adminRoutes);
 app.use('/api/business', businessRoutes);
 app.use('/api/customers', customerRoutes);
 app.use('/api/merchants', merchantRoutes);
@@ -136,7 +138,7 @@ process.on('SIGINT', async () => {
 });
 
 // Initialize services and start server
-async function startServer() {
+async function startServer(): Promise<void> {
   try {
     // Test database connection
     await testDBConnection();

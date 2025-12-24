@@ -46,6 +46,8 @@ interface ProcessedBillItem {
   taxAmount: string;
   subtotal: string;
   totalAmount: string;
+  isService?: boolean;
+  trackQuantity?: boolean;
 }
 
 const auditService = new AuditService();
@@ -96,7 +98,95 @@ export class BillingService {
     return `${prefix}-00001`;
   }
 
-  async createBill(businessId: string, userId: string, input: CreateBillInput, req?: AuthenticatedRequest) {
+  // Helper to update purchase patterns
+  private async updatePurchasePatterns(businessId: string, customerId: string, items: ProcessedBillItem[]): Promise<void> {
+    const { customerPurchasePatterns } = await import('../models/drizzle/schema');
+    
+    for (const item of items) {
+        if (!item.productId) continue;
+
+        const [existingPattern] = await db
+            .select()
+            .from(customerPurchasePatterns)
+            .where(and(
+                eq(customerPurchasePatterns.businessId, businessId),
+                eq(customerPurchasePatterns.customerId, customerId),
+                eq(customerPurchasePatterns.productId, item.productId)
+            ));
+        
+        const currentPrice = item.rate.toString();
+        const currentQty = item.quantity.toString();
+        const now = new Date();
+
+        if (existingPattern) {
+            await db.update(customerPurchasePatterns)
+                .set({
+                    purchaseCount: sql`${customerPurchasePatterns.purchaseCount} + 1`,
+                    lastPurchaseDate: now,
+                    lastPrice: currentPrice,
+                    avgQuantity: sql`(${customerPurchasePatterns.avgQuantity} * ${customerPurchasePatterns.purchaseCount} + ${currentQty}) / (${customerPurchasePatterns.purchaseCount} + 1)`,
+                    updatedAt: now
+                })
+                .where(eq(customerPurchasePatterns.id, existingPattern.id));
+        } else {
+            await db.insert(customerPurchasePatterns).values({
+                businessId,
+                customerId,
+                productId: item.productId,
+                purchaseCount: 1,
+                lastPurchaseDate: now,
+                firstPurchaseDate: now,
+                lastPrice: currentPrice,
+                avgQuantity: currentQty,
+                avgPrice: currentPrice, 
+            });
+        }
+    }
+  }
+
+  async getSuggestions(businessId: string, customerId: string): Promise<Array<{
+    productId: string | null;
+    lastPrice: string | null;
+    lastPurchaseDate: Date | null;
+    purchaseCount: number | null;
+    avgQuantity: string | null;
+    productName: string | null;
+    productCode: string | null;
+    currentPrice: string | null;
+    unit: string | null;
+    suggestionReason: string;
+  }>> {
+    const { customerPurchasePatterns } = await import('../models/drizzle/schema');
+    
+    const patterns = await db
+        .select({
+            productId: customerPurchasePatterns.productId,
+            lastPrice: customerPurchasePatterns.lastPrice,
+            lastPurchaseDate: customerPurchasePatterns.lastPurchaseDate,
+            purchaseCount: customerPurchasePatterns.purchaseCount,
+            avgQuantity: customerPurchasePatterns.avgQuantity,
+            productName: products.name,
+            productCode: products.productCode,
+            currentPrice: products.sellingPrice,
+            unit: products.unit,
+        })
+        .from(customerPurchasePatterns)
+        .leftJoin(products, eq(customerPurchasePatterns.productId, products.id))
+        .where(and(
+            eq(customerPurchasePatterns.businessId, businessId),
+            eq(customerPurchasePatterns.customerId, customerId)
+        ))
+        // Casting for sort order if needed, but lastPurchaseDate is reliable
+        .orderBy(desc(customerPurchasePatterns.lastPurchaseDate))
+        .limit(20);
+
+    return patterns.map(p => ({
+        ...p,
+        suggestionReason: 'Based on purchase history'
+    }));
+  }
+
+  async createBill(businessId: string, userId: string, input: CreateBillInput, req?: AuthenticatedRequest): Promise<typeof bills.$inferSelect> {
     const { 
       items, customerId, billDate, dueDate, 
       paymentMethod, status = 'DRAFT', 
@@ -106,7 +196,6 @@ export class BillingService {
       isRecurring, recurringFrequency
     } = input;
 
-    // 1. Calculate Totals & Item Details
     let calculatedSubtotal = 0;
     let calculatedTotalTax = 0;
     let calculatedTotalDiscount = 0;
@@ -116,23 +205,12 @@ export class BillingService {
       const rate = item.rate;
       const quantity = item.quantity;
       let existingProduct = null;
-      const existingVariant = null;
-
-      // Validate Product Stock if linked
       if (item.productId) {
         [existingProduct] = await db.select().from(products).where(eq(products.id, item.productId));
-        if (existingProduct) {
-            // Check stock logic could go here, but for now we allow draft/pending even if low stock
-        }
       }
-      
-      // Calculate Item Subtotal & Tax
-      // Formula: (Rate * Qty) - Discount + Tax = Total
-      // Note: Tax is usually on (Rate * Qty - Discount)
-      
+
       const grossAmount = rate * quantity;
       
-      // Discount
       let itemDiscount = item.discountAmount || 0;
       if (item.discountPercent && item.discountPercent > 0) {
         itemDiscount = (grossAmount * item.discountPercent) / 100;
@@ -140,7 +218,6 @@ export class BillingService {
       
       const taxableAmount = grossAmount - itemDiscount;
       
-      // Tax
       let itemTax = item.taxAmount || 0;
       if (item.taxPercent && item.taxPercent > 0) {
         itemTax = (taxableAmount * item.taxPercent) / 100;
@@ -170,16 +247,11 @@ export class BillingService {
         taxAmount: itemTax.toFixed(2),
         subtotal: taxableAmount.toFixed(2),
         totalAmount: itemTotal.toFixed(2),
+        isService: existingProduct?.isService || false,
+        trackQuantity: existingProduct?.trackQuantity ?? true
       });
     }
-
-    // 2. Bill Level Calculations
-    // Input might provide overrides for total tax/discount, but usually we aggregate items
-    // If input.discountAmount provided for whole bill, logic gets complex (pro-rate vs separate line). 
-    // For simplicity, we trust item-level aggregation + bill level fields if needed.
-    // Here we strictly summation from items + global shipping/adjustments.
     
-    // Check if input overrides exist, else use calculated
     const finalSubtotal = (input.subtotal !== undefined) ? input.subtotal : calculatedSubtotal;
     const finalTax = (input.taxAmount !== undefined) ? input.taxAmount : calculatedTotalTax;
     const finalDiscount = (input.discountAmount !== undefined) ? input.discountAmount : calculatedTotalDiscount;
@@ -187,7 +259,6 @@ export class BillingService {
     const grandTotal = finalSubtotal - finalDiscount + finalTax + shippingCost + adjustmentAmount + roundOffAmount;
 
     return await db.transaction(async (tx) => {
-      // 3. Create Bill
       const billNumber = await this.generateBillNumber(businessId);
       
       const [bill] = await tx.insert(bills).values({
@@ -205,7 +276,7 @@ export class BillingService {
         taxAmount: finalTax.toString(),
         discountAmount: finalDiscount.toString(),
         totalAmount: grandTotal.toString(),
-        balanceAmount: grandTotal.toString(), // Initially fully unpaid
+        balanceAmount: grandTotal.toString(),
         paidAmount: '0',
         
         shippingCost: shippingCost.toString(),
@@ -226,8 +297,11 @@ export class BillingService {
         isRecurring: isRecurring || false,
         recurringFrequency: recurringFrequency ? (recurringFrequency as RecurringFrequency) : undefined,
       }).returning();
+      
+      if (!bill) {
+        throw new Error('Failed to create bill');
+      }
 
-      // 4. Create Bill Items
       for (const item of processedItems) {
         await tx.insert(billItems).values({
           billId: bill.id,
@@ -250,31 +324,33 @@ export class BillingService {
           totalAmount: item.totalAmount.toString(),
         });
 
-        // 5. Decrement Stock (if Product exists and Bill Status matches)
-        // Usually Stock is deducted on 'CREATED' or 'CONFIRMED', or 'PAID'.
-        // Let's assume deducted on valid status (not Draft/Void).
-        if (item.productId &&  status !== 'DRAFT' && status !== 'VOID' && status !== 'CANCELLED') {
+        if (item.productId && 
+            status !== 'DRAFT' && status !== 'VOID' && status !== 'CANCELLED' && 
+            !item.isService && item.trackQuantity) {
              await tx.execute(
                  sql`UPDATE ${products} 
                      SET current_stock = current_stock - ${item.quantity} 
                      WHERE id = ${item.productId}`
              );
-             // If variant logic existed, would update variant stock too
         }
       }
 
-      await auditService.logBillAction('CREATE', businessId, userId, bill.id, undefined, bill, req);
+      await auditService.logBillAction('CREATE', businessId, userId, bill.id, {}, bill, undefined, req);
       logger.info('Bill created', { billId: bill.id, billNumber });
+
+      if (customerId) {
+           await this.updatePurchasePatterns(businessId, customerId, processedItems);
+      }
 
       return bill;
     });
   }
 
-  async getBill(businessId: string, billId: string) {
+  async getBill(businessId: string, billId: string): Promise<typeof bills.$inferSelect & { items: typeof billItems.$inferSelect[]; payments: (typeof payments.$inferSelect & { allocation: typeof paymentAllocations.$inferSelect })[] }> {
     const bill = await db.query.bills.findFirst({
         where: and(eq(bills.id, billId), eq(bills.businessId, businessId)),
         with: {
-            customer: true, // Need relations defined in schema for this to work perfectly, else manual join
+            customer: true, 
             createdBy: true,
         }
     });
@@ -294,10 +370,10 @@ export class BillingService {
     return { ...bill, items, payments: billPayments.map(bp => ({ ...bp.payment, allocation: bp.allocation })) };
   }
 
-  async listBills(businessId: string, query: BillQueryInput) {
+  async listBills(businessId: string, query: BillQueryInput): Promise<{ bills: typeof bills.$inferSelect[]; pagination: { page: number; limit: number; total: number; totalPages: number } }> {
     const { 
         search, customerId, status, paymentStatus, 
-        startDate, endDate, minAmount, maxAmount, 
+        startDate, endDate, 
         hasBalance, sortBy = 'billDate', sortOrder = 'desc',
         page = 1, limit = 20
     } = query;
@@ -322,28 +398,27 @@ export class BillingService {
     if (endDate) {
         conditions.push(lte(bills.billDate, new Date(endDate)));
     }
-    
-    // Balance check
     if (hasBalance) {
         conditions.push(sql`${bills.balanceAmount} > 0`);
     }
 
     const condition = and(...conditions);
 
-    // Sort
-    let order;
-    const col = bills[sortBy as keyof typeof bills];
-    if (col) {
-        order = sortOrder === 'asc' ? col : desc(col);
-    } else {
-        order = desc(bills.createdAt);
-    }
+    const validSortColumns = {
+        billDate: bills.billDate,
+        createdAt: bills.createdAt,
+        totalAmount: bills.totalAmount,
+        status: bills.status,
+        billNumber: bills.billNumber,
+    };
 
-    // Pagination
+    const sortColumn = validSortColumns[sortBy as keyof typeof validSortColumns] || bills.createdAt;
+    const order = sortOrder === 'asc' ? sortColumn : desc(sortColumn);
+
     const offset = (page - 1) * limit;
 
     const [totalRes] = await db.select({ count: count() }).from(bills).where(condition);
-    const total = totalRes.count;
+    const total = totalRes?.count ? Number(totalRes.count) : 0;
     const totalPages = Math.ceil(total / limit);
 
     const data = await db
@@ -360,28 +435,19 @@ export class BillingService {
     };
   }
 
-  async updateBill(businessId: string, userId: string, billId: string, input: UpdateBillInput) {
+  async updateBill(businessId: string, userId: string, billId: string, input: UpdateBillInput): Promise<typeof bills.$inferSelect> {
     const { 
         status, 
         notes, terms, internalNotes, customerNotes,
         billingAddress, shippingAddress
     } = input;
 
-    // Fetch existing bill
     const [existingBill] = await db
         .select()
         .from(bills)
         .where(and(eq(bills.id, billId), eq(bills.businessId, businessId)));
 
     if (!existingBill) throw new Error('Bill not found');
-
-    // Only allow meaningful updates if DRAFT or PENDING (or strictly DRAFT depending on policy)
-    // If it's PAID, we shouldn't allow changing amounts easily without Voiding.
-    // For now, we allow updating text fields always, and status if provided.
-    
-    // NOTE: Full item update logic is complex (re-stocking, diffing). 
-    // Excluding item updates for this iteration unless critical. 
-    // User plan said "Handle status changes".
 
     const updateData: {
       status?: BillingStatus;
@@ -423,25 +489,30 @@ export class BillingService {
         .where(eq(bills.id, billId));
 
     await auditService.logBillAction('UPDATE', businessId, userId, billId, existingBill, input);
-    return { ...existingBill, ...input };
+    const [updatedBillResult] = await db
+        .select()
+        .from(bills)
+        .where(eq(bills.id, billId));
+        
+    if (!updatedBillResult) throw new Error('Failed to retrieve updated bill');
+
+    return updatedBillResult;
   }
 
-  async recordPayment(businessId: string, userId: string, billId: string, input: BillPaymentInput, req?: AuthenticatedRequest) {
+  async recordPayment(businessId: string, userId: string, billId: string, input: BillPaymentInput, req?: AuthenticatedRequest): Promise<{ payment: typeof payments.$inferSelect; newBalance: string; newStatus: BillingStatus }> {
     const { amount, method, paymentDate, referenceNumber, notes } = input;
 
     const [bill] = await db.select().from(bills).where(and(eq(bills.id, billId), eq(bills.businessId, businessId)));
     if (!bill) throw new Error('Bill not found');
 
-    const currentBalance = parseFloat(bill.balanceAmount); // Assuming string in DB, need valid number
+    const currentBalance = parseFloat(bill.balanceAmount); 
     if (currentBalance <= 0) throw new Error('Bill is already fully paid');
     
     if (amount <= 0) throw new Error('Payment amount must be positive');
 
-    // Start Transaction
     return await db.transaction(async (tx) => {
         const paymentNumber = await this.generatePaymentNumber(businessId);
         
-        // 1. Create Payment Record
         const [payment] = await tx.insert(payments).values({
             businessId,
             customerId: bill.customerId,
@@ -450,17 +521,17 @@ export class BillingService {
             amount: amount.toString(),
             method: method as PaymentMethod,
             status: 'COMPLETED',
-            allocatedAmount: amount.toString(), // Fully allocated to this bill for now
+            allocatedAmount: amount.toString(),
             unallocatedAmount: '0',
             referenceNumber,
             notes,
             createdBy: userId
         }).returning();
 
-        // 2. Create Allocation
-        // If amount > balance, we effectively have overpayment or unallocated (logic simplifies to strict here)
-        // For now, assuming exact or partial payment against specific bill.
-        
+        if (!payment) {
+          throw new Error('Failed to create payment record');
+        }
+
         const allocationAmount = Math.min(amount, currentBalance);
         
         await tx.insert(paymentAllocations).values({
@@ -471,14 +542,13 @@ export class BillingService {
             billBalanceAfter: (currentBalance - allocationAmount).toString(),
         });
 
-        // 3. Update Bill
         const newPaidAmount = (parseFloat(bill.paidAmount) + allocationAmount).toFixed(2);
         const newBalance = (parseFloat(bill.totalAmount) - parseFloat(newPaidAmount)).toFixed(2);
         
         let newStatus: BillingStatus = bill.status as BillingStatus;
         let newPaymentStatus: PaymentStatus = bill.paymentStatus as PaymentStatus;
         
-        if (parseFloat(newBalance) <= 0.01) { // Floating point safety
+        if (parseFloat(newBalance) <= 0.01) {
              newStatus = 'PAID' as BillingStatus;
              newPaymentStatus = 'COMPLETED' as PaymentStatus;
         } else {
@@ -496,9 +566,124 @@ export class BillingService {
             .where(eq(bills.id, billId));
 
         await auditService.logPaymentAction('CREATE', businessId, userId, payment.id, undefined, payment, req);
-        await auditService.logBillAction('PAY', businessId, userId, billId, { balance: currentBalance }, { balance: newBalance }, req);
+        await auditService.logBillAction('PAY', businessId, userId, billId, { balance: currentBalance }, { balance: newBalance }, undefined, req);
 
         return { payment, newBalance, newStatus };
+    });
+  }
+
+  async recordBulkPayment(
+    businessId: string, 
+    userId: string, 
+    customerId: string, 
+    input: BillPaymentInput,
+    req?: AuthenticatedRequest
+  ): Promise<{ payment: typeof payments.$inferSelect; allocations: typeof paymentAllocations.$inferSelect[] }> {
+    const { amount, method, paymentDate, referenceNumber, notes } = input;
+    
+    if (amount <= 0) throw new Error('Payment amount must be positive');
+
+    return await db.transaction(async (tx) => {
+        // 1. Create Payment Record (initially unallocated)
+        const paymentNumber = await this.generatePaymentNumber(businessId);
+        
+        const [payment] = await tx.insert(payments).values({
+            businessId,
+            customerId,
+            paymentNumber,
+            paymentDate: new Date(paymentDate || Date.now()),
+            amount: amount.toString(),
+            method: method as PaymentMethod,
+            status: 'COMPLETED',
+            allocatedAmount: '0', 
+            unallocatedAmount: amount.toString(),
+            referenceNumber,
+            notes,
+            createdBy: userId
+        }).returning();
+
+        if (!payment) throw new Error('Failed to create payment');
+
+        // 2. Fetch Unpaid Bills (FIFO: ascending date)
+        const unpaidBills = await tx
+            .select()
+            .from(bills)
+            .where(and(
+                eq(bills.businessId, businessId),
+                eq(bills.customerId, customerId),
+                sql`${bills.balanceAmount} > 0`,
+                // Exclude VOID or CANCELLED just in case
+                sql`${bills.status} NOT IN ('VOID', 'CANCELLED')`
+            ))
+            .orderBy(bills.billDate, bills.createdAt); // Oldest first
+
+        let remainingAmount = amount;
+        const allocations = [];
+
+        for (const bill of unpaidBills) {
+            if (remainingAmount <= 0) break;
+
+            const billBalance = parseFloat(bill.balanceAmount);
+            const canPay = Math.min(remainingAmount, billBalance);
+            
+            if (canPay > 0) {
+                // Apply Allocation
+                const safeCanPay = Number(canPay.toFixed(2));
+                
+                const [allocation] = await tx.insert(paymentAllocations).values({
+                    paymentId: payment.id,
+                    billId: bill.id,
+                    allocatedAmount: safeCanPay.toString(),
+                    billBalanceBefore: billBalance.toString(),
+                    billBalanceAfter: (billBalance - safeCanPay).toString(),
+                }).returning();
+                
+                if (allocation) {
+                    allocations.push(allocation);
+                }
+
+                // Update Bill
+                const newPaid = (parseFloat(bill.paidAmount) + safeCanPay).toFixed(2);
+                const newBal = (parseFloat(bill.totalAmount) - parseFloat(newPaid)).toFixed(2);
+                 
+                let newStatus = bill.status as BillingStatus;
+                let newPaymentStatus = bill.paymentStatus as PaymentStatus;
+
+                if (parseFloat(newBal) <= 0.01) {
+                    newStatus = 'PAID';
+                    newPaymentStatus = 'COMPLETED';
+                } else {
+                    newStatus = 'PARTIAL';
+                    newPaymentStatus = 'PENDING';
+                }
+
+                await tx.update(bills)
+                    .set({
+                        paidAmount: newPaid,
+                        balanceAmount: newBal,
+                        status: newStatus,
+                        paymentStatus: newPaymentStatus
+                    })
+                    .where(eq(bills.id, bill.id));
+
+                // Deduct from remaining
+                remainingAmount -= safeCanPay;
+                remainingAmount = Number(remainingAmount.toFixed(2)); // Float safety
+            }
+        }
+
+        // 3. Update Payment with final allocated amounts
+        const totalAllocated = amount - remainingAmount;
+        await tx.update(payments)
+            .set({
+                allocatedAmount: totalAllocated.toFixed(2),
+                unallocatedAmount: remainingAmount.toFixed(2)
+            })
+            .where(eq(payments.id, payment.id));
+        
+        await auditService.logPaymentAction('CREATE', businessId, userId, payment.id, undefined, payment, req);
+
+        return { payment, allocations };
     });
   }
 }
