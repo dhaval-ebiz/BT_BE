@@ -1,6 +1,6 @@
 import { db } from '../config/database';
-import { retailBusinesses, businessStaff, users, roles, businessTypeEnum } from '../models/drizzle/schema';
-import { eq, and } from 'drizzle-orm';
+import { retailBusinesses, businessStaff, users, roles, businessTypeEnum, products, customers, bills } from '../models/drizzle/schema';
+import { eq, and, count } from 'drizzle-orm';
 import { 
   CreateBusinessInput, 
   UpdateBusinessInput, 
@@ -359,6 +359,106 @@ export class BusinessService {
     logger.info('Staff member removed', { businessId, staffId });
 
     return { message: 'Staff member removed successfully' };
+  }
+
+  // Onboarding Progress Tracking
+
+  async getOnboardingStatus(businessId: string): Promise<{
+    completionPercentage: number;
+    steps: Array<{
+      name: string;
+      description: string;
+      completed: boolean;
+      completedAt?: Date;
+    }>;
+    isComplete: boolean;
+  }> {
+    // Get business details
+    const [business] = await db
+      .select()
+      .from(retailBusinesses)
+      .where(eq(retailBusinesses.id, businessId))
+      .limit(1);
+
+    if (!business) {
+      throw new Error('Business not found');
+    }
+
+    // Get user to check email verification
+    const [owner] = await db
+      .select()
+      .from(users)
+      .where(eq(users.id, business.ownerId))
+      .limit(1);
+
+    // Check products count
+    const [productCount] = await db
+      .select({ count: count() })
+      .from(products)
+      .where(eq(products.businessId, businessId));
+
+    // Check customers count
+    const [customerCount] = await db
+      .select({ count: count() })
+      .from(customers)
+      .where(eq(customers.businessId, businessId));
+
+    // Check bills count
+    const [billCount] = await db
+      .select({ count: count() })
+      .from(bills)
+      .where(eq(bills.businessId, businessId));
+
+    // Define onboarding steps
+    const steps = [
+      {
+        name: 'business_profile',
+        description: 'Business profile created',
+        completed: true, // If we can fetch the business, it's created
+        completedAt: business.createdAt,
+      },
+      {
+        name: 'email_verified',
+        description: 'Email address verified',
+        completed: owner?.emailVerified || false,
+        completedAt: owner?.emailVerified ? owner.createdAt : undefined,
+      },
+      {
+        name: 'settings_configured',
+        description: 'Business settings configured',
+        completed: !!(business.billingSettings || business.paymentSettings || business.settings),
+        completedAt: business.updatedAt,
+      },
+      {
+        name: 'products_added',
+        description: 'At least one product added',
+        completed: (productCount?.count || 0) > 0,
+        completedAt: (productCount?.count || 0) > 0 ? business.createdAt : undefined,
+      },
+      {
+        name: 'customers_added',
+        description: 'At least one customer added',
+        completed: (customerCount?.count || 0) > 0,
+        completedAt: (customerCount?.count || 0) > 0 ? business.createdAt : undefined,
+      },
+      {
+        name: 'first_bill_created',
+        description: 'First bill created',
+        completed: (billCount?.count || 0) > 0,
+        completedAt: (billCount?.count || 0) > 0 ? business.createdAt : undefined,
+      },
+    ];
+
+    // Calculate completion percentage
+    const completedSteps = steps.filter(s => s.completed).length;
+    const completionPercentage = Math.round((completedSteps / steps.length) * 100);
+    const isComplete = completionPercentage === 100;
+
+    return {
+      completionPercentage,
+      steps,
+      isComplete,
+    };
   }
 
   private mapPermissionsToBooleans(permissions: string[]): Record<string, boolean> {

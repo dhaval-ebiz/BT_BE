@@ -99,6 +99,9 @@ router.get('/:businessId', authenticateToken, authorizeBusinessAccess, businessC
  */
 router.put('/:businessId', authenticateToken, authorizeBusinessAccess, validateBody(updateBusinessSchema), businessController.updateBusiness);
 
+// Onboarding progress
+router.get('/:businessId/onboarding-status', authenticateToken, authorizeBusinessAccess, (req, res) => businessController.getOnboardingStatus(req, res));
+
 /**
  * @swagger
  * /api/business/{businessId}/settings:

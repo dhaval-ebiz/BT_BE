@@ -259,4 +259,24 @@ export class BusinessController {
       });
     }
   }
+
+  // Onboarding Progress
+
+  async getOnboardingStatus(req: BusinessRequest, res: Response): Promise<void> {
+    try {
+      const { businessId } = businessIdSchema.parse(req.params);
+      const status = await businessService.getOnboardingStatus(businessId);
+
+      res.status(200).json({
+        success: true,
+        data: status,
+      });
+    } catch (error) {
+      logger.error('Get onboarding status error:', error);
+      res.status(500).json({
+        success: false,
+        message: getErrorMessage(error),
+      });
+    }
+  }
 }

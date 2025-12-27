@@ -130,6 +130,40 @@ router.post('/businesses/:businessId/suspend', (req, res) => adminController.sus
  */
 router.post('/businesses/:businessId/activate', (req, res) => adminController.activateBusiness(req, res));
 
+/**
+ * @swagger
+ * /api/admin/businesses/{businessId}/impersonate:
+ *   post:
+ *     summary: Impersonate a business (super admin only)
+ *     tags: [Admin]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: businessId
+ *         required: true
+ *         schema:
+ *           type: string
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required:
+ *               - reason
+ *             properties:
+ *               reason:
+ *                 type: string
+ *               duration:
+ *                 type: integer
+ *                 default: 3600
+ *     responses:
+ *       200:
+ *         description: Impersonation token generated
+ */
+router.post('/businesses/:businessId/impersonate', (req, res) => adminController.impersonateBusiness(req, res));
+
 // ==================== USER MANAGEMENT ====================
 
 /**
@@ -215,5 +249,128 @@ router.post('/users/:userId/suspend', (req, res) => adminController.suspendUser(
  *         description: User activated
  */
 router.post('/users/:userId/activate', (req, res) => adminController.activateUser(req, res));
+
+// ==================== PLATFORM ANALYTICS ====================
+
+/**
+ * @swagger
+ * /api/admin/analytics/revenue:
+ *   get:
+ *     summary: Get revenue analytics
+ *     tags: [Admin]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: query
+ *         name: months
+ *         schema:
+ *           type: integer
+ *           default: 12
+ *     responses:
+ *       200:
+ *         description: Revenue analytics
+ */
+router.get('/analytics/revenue', (req, res) => adminController.getRevenueAnalytics(req, res));
+
+/**
+ * @swagger
+ * /api/admin/analytics/users:
+ *   get:
+ *     summary: Get user growth metrics
+ *     tags: [Admin]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: query
+ *         name: months
+ *         schema:
+ *           type: integer
+ *           default: 12
+ *     responses:
+ *       200:
+ *         description: User growth metrics
+ */
+router.get('/analytics/users', (req, res) => adminController.getUserGrowthMetrics(req, res));
+
+/**
+ * @swagger
+ * /api/admin/analytics/features:
+ *   get:
+ *     summary: Get feature usage analytics
+ *     tags: [Admin]
+ *     security:
+ *       - bearerAuth: []
+ *     responses:
+ *       200:
+ *         description: Feature usage analytics
+ */
+router.get('/analytics/features', (req, res) => adminController.getFeatureUsageAnalytics(req, res));
+
+/**
+ * @swagger
+ * /api/admin/analytics/top-businesses:
+ *   get:
+ *     summary: Get top businesses by revenue
+ *     tags: [Admin]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: query
+ *         name: limit
+ *         schema:
+ *           type: integer
+ *           default: 10
+ *     responses:
+ *       200:
+ *         description: Top businesses
+ */
+router.get('/analytics/top-businesses', (req, res) => adminController.getTopBusinesses(req, res));
+
+/**
+ * @swagger
+ * /api/admin/analytics/churn:
+ *   get:
+ *     summary: Get churn analysis
+ *     tags: [Admin]
+ *     security:
+ *       - bearerAuth: []
+ *     responses:
+ *       200:
+ *         description: Churn analysis
+ */
+router.get('/analytics/churn', (req, res) => adminController.getChurnAnalysis(req, res));
+
+// ==================== BROADCAST NOTIFICATIONS ====================
+
+/**
+ * @swagger
+ * /api/admin/notifications/broadcast:
+ *   post:
+ *     summary: Broadcast notification to businesses
+ *     tags: [Admin]
+ *     security:
+ *       - bearerAuth: []
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required:
+ *               - target
+ *               - message
+ *             properties:
+ *               target:
+ *                 type: string
+ *                 enum: [ALL, ACTIVE, INACTIVE, TRIAL]
+ *               message:
+ *                 type: string
+ *               subject:
+ *                 type: string
+ *     responses:
+ *       200:
+ *         description: Broadcast queued successfully
+ */
+router.post('/notifications/broadcast', (req, res) => adminController.broadcastNotification(req, res));
 
 export { router as adminRoutes };
